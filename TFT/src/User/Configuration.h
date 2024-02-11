@@ -36,7 +36,7 @@
  *                P4: [min: 0, max: 11]
  *   Options: [OFF (port disabled): 0, 2400: 1, 9600: 2, 19200: 3, 38400: 4, 57600: 5, 115200: 6, 230400: 7, 250000: 8, 500000: 9, 921600: 10, 1000000: 11]
  */
-#define SP_1 6  // Default: 6
+#define SP_1 8  // Default: 6
 #define SP_2 0  // Default: 0
 #define SP_3 0  // Default: 0
 #define SP_4 0  // Default: 0
@@ -188,7 +188,7 @@
  *
  *   Options: [Primary Language (english): 0, Secondary Language: 1]
  */
-#define LANGUAGE 0  // Default: 0
+#define LANGUAGE 1  // Default: 0
 
 /**
  * Status Screen
@@ -201,7 +201,7 @@
  *
  *   Options: [disable: 0, enable: 1]
  */
-#define STATUS_SCREEN 1  // Default: 1
+#define STATUS_SCREEN 0  // Default: 1
 
 /**
  * Touch Mode Colors
@@ -345,7 +345,7 @@
  *
  *   Options: [Percentage & Elapsed time: 0, Percentage & Remaining time: 1, Elapsed time & Remaining time: 2]
  */
-#define PROG_DISP_TYPE 2  // Default: 2
+#define PROG_DISP_TYPE 1  // Default: 2
 
 /**
  * Current Layer Display Mode During Print
@@ -370,7 +370,7 @@
  *
  *   Options: [Layer height: 0, Layer number: 1, Both - height & number: 2]
  */
-#define LAYER_DISP_TYPE 0  // Default: 0
+#define LAYER_DISP_TYPE 1  // Default: 0
 
 //================================================================================
 //============================= Marlin Mode Settings =============================
@@ -540,9 +540,9 @@
 #define X_MIN_POS   0  // Default: 0
 #define Y_MIN_POS   0  // Default: 0
 #define Z_MIN_POS   0  // Default: 0
-#define X_MAX_POS 235  // Default: 235
-#define Y_MAX_POS 235  // Default: 235
-#define Z_MAX_POS 250  // Default: 250
+#define X_MAX_POS 220  // Default: 235
+#define Y_MAX_POS 220  // Default: 235
+#define Z_MAX_POS 240  // Default: 250
 
 /**
  * X & Y Move Speeds/Feedrates
@@ -606,7 +606,7 @@
  *
  *   Options: [disable: 0, enable: 1, auto-detect: 2]
  */
-#define ONBOARD_SD 2  // Default: 2
+#define ONBOARD_SD 0  // Default: 2
 
 /**
  * M27 Printing Status Refresh Time
@@ -846,7 +846,7 @@
  *
  *   Options: [Normal Disabled: 0, Normal Enabled: 1, Smart Disabled: 2, Smart Enabled: 3]
  */
-#define FIL_RUNOUT 0  // Default: 0
+#define FIL_RUNOUT 1 // Default: 0
 
 /**
  * Inverted Filament Runout Sensor Logic
@@ -1325,7 +1325,7 @@
  *             HUNGARIAN,  TURKISH,  GREEK,       SLOVENIAN,  CATALAN,   TRAD_CHINESE,  UKRAINIAN,
  *             BRAZIL,     CROATIAN]
  */
-#define SYSTEM_LANGUAGE ENGLISH  // Default: ENGLISH
+#define SYSTEM_LANGUAGE SPANISH  // Default: ENGLISH
 
 /**
  * Rapid Serial Communication

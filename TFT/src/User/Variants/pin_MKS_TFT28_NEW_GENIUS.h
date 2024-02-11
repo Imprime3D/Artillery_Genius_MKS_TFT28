@@ -14,12 +14,12 @@
 #if !defined(ST7920_EMULATOR) || defined(SPI3_PIN_SMART_USAGE)
   // Power Supply Auto Shutdown Detection pin
   #ifndef PS_ON_PIN
-    #define PS_ON_PIN PB1
+    #define PS_ON_PIN PB0
   #endif
 
   // Filament Runout Detection pin
   #ifndef FIL_RUNOUT_PIN
-    #define FIL_RUNOUT_PIN PB0
+    #define FIL_RUNOUT_PIN PB1
   #endif
 #endif
   
