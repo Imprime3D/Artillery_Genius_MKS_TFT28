@@ -855,14 +855,14 @@
  * Enable it in case filament runout is triggered by a HIGH signal.
  *   Options: [disable: 0, enable: 1]
  */
-#define FIL_RUNOUT_INVERTED 1  // Default: 1
+#define FIL_RUNOUT_INVERTED 0  // Default: 1
 
 /**
  * NC (Normal Close) Filament Runout Sensor
  * The sensor is of type NC.
  *   Options: [Normal Open: 0, Normal Close: 1]
  */
-#define FIL_RUNOUT_NC 1  // Default: 1
+#define FIL_RUNOUT_NC 0   // Default: 1
 
 /**
  * Filament Runout Noise Threshold
