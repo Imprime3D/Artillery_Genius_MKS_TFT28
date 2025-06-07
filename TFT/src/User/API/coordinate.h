@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
-#include <stdint.h>
+#include "variants.h"
 
 typedef enum
 {
@@ -23,16 +23,7 @@ typedef struct
   uint32_t feedrate;
 } COORDINATE;
 
-typedef struct
-{
-  float coordinate;
-  uint32_t feedrate;
-  bool relative;
-  bool handled;
-} E_AXIS_BACKUP;
-
 extern const char axis_id[TOTAL_AXIS];
-extern E_AXIS_BACKUP eAxisBackup;
 
 bool coorGetRelative(void);
 void coorSetRelative(bool mode);
@@ -49,12 +40,10 @@ float coordinateGetExtruderActual(void);
 void coordinateSetExtruderActualSteps(float steps);
 float coordinateGetAxisActual(AXIS axis);
 void coordinateSetAxisActual(AXIS axis, float position);
-void coordinateGetAllActual(COORDINATE *tmp);
-float coordinateGetAxis(AXIS axis);
-
-void coordinateQueryClearUpdateWaiting(void);  // clear pending coordinate query and set next update time
-void coordinateQuery(uint8_t delay);           // query for coordinate
-void coordinateQueryTurnOff(void);
+void coordinateQuerySetWait(bool wait);
+void coordinateQuery(void);
+float GetLevelCornerPosition(int point);
+void  SetLevelCornerPosition(int point, float position);
 
 #ifdef __cplusplus
 }

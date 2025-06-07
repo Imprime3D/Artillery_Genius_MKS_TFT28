@@ -32,14 +32,8 @@
 #ifndef _PRINTF_H_
 #define _PRINTF_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stdarg.h>
 #include <stddef.h>
-
-#include "variants.h"
 
 // largest possilbe Float number
 #define PRINTF_MAX_FLOAT  1e8
@@ -56,18 +50,17 @@ extern "C" {
 // Maximum buffer length(characters) for sprintf
 #define MAX_BUFFER_LENGTH  (size_t)128
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Output a character to a custom device like UART, used by the printf() function
  * This function is declared here only. You have to write your custom implementation somewhere
  * \param character Character to output
  */
 void _putchar(char character);
-
-#if defined(SERIAL_DEBUG_PORT) && defined(DEBUG_SERIAL_GENERIC)
-  #define _putchar(n) Serial_PutChar(SERIAL_DEBUG_PORT, n)
-#else
-  #define _putchar(n)
-#endif
+#define _putchar(n)
 
 /**
  * Tiny printf implementation
@@ -79,6 +72,7 @@ void _putchar(char character);
  */
 #define printf printf_
 int printf_(const char* format, ...);
+
 
 /**
  * Tiny sprintf implementation
@@ -118,6 +112,7 @@ int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
 int  snprintf_(char* buffer, size_t count, const char* format, ...);
 int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
 
+
 /**
  * Tiny vprintf implementation
  * \param format A string that specifies the format of the output
@@ -126,6 +121,7 @@ int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
  */
 #define vprintf vprintf_
 int vprintf_(const char* format, va_list va);
+
 
 /**
  * printf with output function
@@ -137,8 +133,10 @@ int vprintf_(const char* format, va_list va);
  */
 int fctprintf(void (*out)(char character, void* arg), void* arg, const char* format, ...);
 
+
 #ifdef __cplusplus
 }
 #endif
+
 
 #endif  // _PRINTF_H_

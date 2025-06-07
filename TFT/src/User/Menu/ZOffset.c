@@ -1,6 +1,8 @@
 #include "ZOffset.h"
 #include "includes.h"
 
+#define ITEM_Z_OFFSET_SUBMENU_NUM 4
+
 static bool probeOffsetMenu = false;
 static uint8_t curUnit_index = 0;
 static uint8_t curSubmenu_index = 0;
@@ -14,41 +16,44 @@ void zOffsetNotifyError(bool isStarted)
     sprintf(tempMsg, "%s", textSelect(LABEL_HOME_OFFSET));
 
   if (!isStarted)
-    sprintf(strchr(tempMsg, '\0'), " %s", textSelect(LABEL_OFF));
+    sprintf(&tempMsg[strlen(tempMsg)], " %s", textSelect(LABEL_OFF));
   else
-    sprintf(strchr(tempMsg, '\0'), " %s", textSelect(LABEL_ON));
+    sprintf(&tempMsg[strlen(tempMsg)], " %s", textSelect(LABEL_ON));
 
   addToast(DIALOG_TYPE_ERROR, tempMsg);
 }
 
-void zOffsetDraw(bool status, float val)
+void zOffsetDrawStatus(bool status)
 {
-  char tempstr[20], tempstr2[20], tempstr3[30];
+  char tempstr[20];
 
   if (!status)
   {
     sprintf(tempstr, "%-15s", textSelect(itemToggle[status].index));
-    sprintf(tempstr3, "%-15s", "");
-    sprintf(tempstr2, "  %.2f  ", val);
-
     GUI_SetColor(infoSettings.reminder_color);
   }
   else
   {
-    sprintf(tempstr, "ZO:%.2f  ", val);
-    sprintf(tempstr3, "%s:%.3f", textSelect(LABEL_SHIM), infoSettings.level_z_pos);
-    sprintf(tempstr2, "  %.2f  ", val + infoSettings.level_z_pos);
-
-    GUI_SetColor(infoSettings.status_color);
+    sprintf(tempstr, "Shim:%.2f  ", infoSettings.level_z_pos);
+    GUI_SetColor(infoSettings.sd_reminder_color);
   }
 
   GUI_DispString(exhibitRect.x0, exhibitRect.y0, (uint8_t *) tempstr);
-  GUI_DispString(exhibitRect.x0, exhibitRect.y1 - BYTE_HEIGHT, (uint8_t *) tempstr3);
-
   GUI_SetColor(infoSettings.font_color);
-  setFontSize(FONT_SIZE_LARGE);
-  GUI_DispStringInPrect(&exhibitRect, (uint8_t *) tempstr2);
-  setFontSize(FONT_SIZE_NORMAL);
+}
+
+void zOffsetDrawValue(bool status, float val)
+{
+  char tempstr[20];
+
+  if (!status)
+    sprintf(tempstr, "  %.2f  ", val);
+  else
+    sprintf(tempstr, "  %.2f  ", val + infoSettings.level_z_pos);
+
+  setLargeFont(true);
+  GUI_DispStringInPrect(&exhibitRect, (uint8_t *) tempstr);
+  setLargeFont(false);
 }
 
 void zOffsetSetMenu(bool probeOffset)
@@ -58,12 +63,11 @@ void zOffsetSetMenu(bool probeOffset)
 
 void menuZOffset(void)
 {
-  ITEM itemZOffsetSubmenu[] = {
+  ITEM itemZOffsetSubmenu[ITEM_Z_OFFSET_SUBMENU_NUM] = {
     // icon                        label
     {ICON_01_MM,                   LABEL_01_MM},
     {ICON_RESET_VALUE,             LABEL_RESET},
     {ICON_EEPROM_SAVE,             LABEL_SAVE},
-    {ICON_BABYSTEP,                LABEL_SHIM},
     {ICON_DISABLE_STEPPERS,        LABEL_XY_UNLOCK},
   };
 
@@ -78,8 +82,8 @@ void menuZOffset(void)
       #else
         {ICON_DEC,                     LABEL_DEC},
       #endif
-      {ICON_NULL,                    LABEL_NULL},
-      {ICON_NULL,                    LABEL_NULL},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
       #ifdef FRIENDLY_Z_OFFSET_LANGUAGE
         {ICON_NOZZLE_UP,               LABEL_UP},
       #else
@@ -95,94 +99,120 @@ void menuZOffset(void)
   KEY_VALUES key_num = KEY_IDLE;
   float now, z_offset;
   float unit;
-  void (* offsetEnable)(float);        // enable Z offset
-  void (* offsetDisable)(void);        // disable Z offset
-  bool (* offsetGetStatus)(void);      // get current status
-  float (* offsetGetValue)(void);      // get current Z offset
-  float (* offsetResetValue)(void);    // reset current Z offset
-  float (* offsetUpdateValue)(float);  // update current Z offset
+  float ablState;
+  bool (* offsetGetStatus)(void);                       // get current status
+  void (* offsetEnable)(bool, float);                   // enable Z offset
+  void (* offsetDisable)(void);                         // disable Z offset
+  float (* offsetDecreaseValue)(float);                 // decrease current Z offset
+  float (* offsetIncreaseValue)(float);                 // increase current Z offset
+  float (* offsetResetValue)(void);                     // reset current Z offset
+  float (* offsetGetValue)(void);                       // get current Z offset
+
+  #if LCD_ENCODER_SUPPORT
+    float (* offsetUpdateValueByEncoder)(float, int8_t);  // update current Z offset by encoder
+  #endif
+
+  ablState = getParameter(P_ABL_STATE, 0);
+  
+  // if enabled, always disable ABL before editing a mesh
+  if (ablState == ENABLED)
+    storeCmd(infoMachineSettings.firmwareType != FW_REPRAPFW ? "M420 S0\n" : "G29 S2\n");
 
   if (probeOffsetMenu)
   { // use Probe Offset menu
     zOffsetItems.title.index = LABEL_PROBE_OFFSET;
+    offsetGetStatus = probeOffsetGetStatus;
     offsetEnable = probeOffsetEnable;
     offsetDisable = probeOffsetDisable;
-    offsetGetStatus = probeOffsetGetStatus;
-    offsetGetValue = probeOffsetGetValue;
+    offsetDecreaseValue = probeOffsetDecreaseValue;
+    offsetIncreaseValue = probeOffsetIncreaseValue;
     offsetResetValue = probeOffsetResetValue;
-    offsetUpdateValue = probeOffsetUpdateValue;
+    offsetGetValue = probeOffsetGetValue;
+
+    #if LCD_ENCODER_SUPPORT
+      offsetUpdateValueByEncoder = probeOffsetUpdateValueByEncoder;
+    #endif
   }
   else
   { // use Home Offset menu
     zOffsetItems.title.index = LABEL_HOME_OFFSET;
+    offsetGetStatus = homeOffsetGetStatus;
     offsetEnable = homeOffsetEnable;
     offsetDisable = homeOffsetDisable;
-    offsetGetStatus = homeOffsetGetStatus;
-    offsetGetValue = homeOffsetGetValue;
+    offsetDecreaseValue = homeOffsetDecreaseValue;
+    offsetIncreaseValue = homeOffsetIncreaseValue;
     offsetResetValue = homeOffsetResetValue;
-    offsetUpdateValue = homeOffsetUpdateValue;
+    offsetGetValue = homeOffsetGetValue;
+
+    #if LCD_ENCODER_SUPPORT
+      offsetUpdateValueByEncoder = homeOffsetUpdateValueByEncoder;
+    #endif
   }
 
   now = z_offset = offsetGetValue();
 
-  INVERT_Z_AXIS_ICONS(&zOffsetItems);
   zOffsetItems.items[KEY_ICON_4].label = itemToggle[offsetGetStatus()];
 
   itemZOffsetSubmenu[0] = itemMoveLen[curUnit_index];
   zOffsetItems.items[KEY_ICON_6] = itemZOffsetSubmenu[curSubmenu_index];
 
   menuDrawPage(&zOffsetItems);
-  zOffsetDraw(offsetGetStatus(), now);
+  zOffsetDrawStatus(offsetGetStatus());
+  zOffsetDrawValue(offsetGetStatus(), now);
 
-  while (MENU_IS(menuZOffset))
+  #if LCD_ENCODER_SUPPORT
+    encoderPosition = 0;
+  #endif
+
+  while (infoMenu.menu[infoMenu.cur] == menuZOffset)
   {
     unit = moveLenSteps[curUnit_index];
-    z_offset = offsetGetValue();  // always load current Z offset
-    key_num = menuKeyGetValue();
 
+    z_offset = offsetGetValue();  // always load current Z offset
+
+    key_num = menuKeyGetValue();
     switch (key_num)
     {
       // decrease Z offset
       case KEY_ICON_0:
-      case KEY_DECREASE:
         if (!offsetGetStatus())
           zOffsetNotifyError(false);
         else
-          z_offset = offsetUpdateValue(-unit);
+          z_offset = offsetDecreaseValue(unit);
         break;
 
       case KEY_INFOBOX:
         if (offsetGetStatus())
           zOffsetNotifyError(true);
         else
-          OPEN_MENU(menuUnifiedHeat);
+          infoMenu.menu[++infoMenu.cur] = menuUnifiedHeat;
         break;
 
       // increase Z offset
       case KEY_ICON_3:
-      case KEY_INCREASE:
         if (!offsetGetStatus())
           zOffsetNotifyError(false);
         else
-          z_offset = offsetUpdateValue(unit);
+          z_offset = offsetIncreaseValue(unit);
         break;
 
       // enable/disable Z offset change
       case KEY_ICON_4:
         if (!offsetGetStatus())
-          offsetEnable(infoSettings.level_z_pos);
+          offsetEnable(true, infoSettings.level_z_pos);
         else
           offsetDisable();
 
         zOffsetItems.items[key_num].label = itemToggle[offsetGetStatus()];
 
         menuDrawItem(&zOffsetItems.items[key_num], key_num);
-        zOffsetDraw(offsetGetStatus(), z_offset);
+        zOffsetDrawStatus(offsetGetStatus());
+        zOffsetDrawValue(offsetGetStatus(), z_offset);  // just to switch/display current Z offset
         break;
 
       // change submenu
       case KEY_ICON_5:
-        curSubmenu_index = (curSubmenu_index + 1) % COUNT(itemZOffsetSubmenu);
+        curSubmenu_index = (curSubmenu_index + 1) % ITEM_Z_OFFSET_SUBMENU_NUM;
         zOffsetItems.items[KEY_ICON_6] = itemZOffsetSubmenu[curSubmenu_index];
 
         menuDrawItem(&zOffsetItems.items[KEY_ICON_6], KEY_ICON_6);
@@ -194,7 +224,7 @@ void menuZOffset(void)
         {
           // change unit
           case 0:
-            curUnit_index = (curUnit_index + 1) % COUNT(itemZOffsetSubmenu);
+            curUnit_index = (curUnit_index + 1) % ITEM_FINE_MOVE_LEN_NUM;
             itemZOffsetSubmenu[curSubmenu_index] = itemMoveLen[curUnit_index];
             zOffsetItems.items[key_num] = itemZOffsetSubmenu[curSubmenu_index];
 
@@ -212,18 +242,14 @@ void menuZOffset(void)
           // save to EEPROM
           case 2:
             if (infoMachineSettings.EEPROM == 1)
-              popupDialog(DIALOG_TYPE_QUESTION, zOffsetItems.title.index, LABEL_EEPROM_SAVE_INFO, LABEL_CONFIRM, LABEL_CANCEL, saveEepromSettings, NULL, NULL);
-            break;
-
-          // set level Z pos (shim)
-          case 3:
-            infoSettings.level_z_pos = editFloatValue(LEVELING_Z_POS_MIN, LEVELING_Z_POS_MAX,
-                                                      LEVELING_Z_POS_DEFAULT, infoSettings.level_z_pos);
-            zOffsetDraw(offsetGetStatus(), now);
+            {
+              setDialogText(zOffsetItems.title.index, LABEL_EEPROM_SAVE_INFO, LABEL_CONFIRM, LABEL_CANCEL);
+              showDialog(DIALOG_TYPE_QUESTION, saveEepromSettings, NULL, NULL);
+            }
             break;
 
           // unlock XY axis
-          case 4:
+          case 3:
             if (!offsetGetStatus())
               zOffsetNotifyError(false);
             else
@@ -239,25 +265,38 @@ void menuZOffset(void)
         if (offsetGetStatus())
           offsetDisable();
 
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:
+        #if LCD_ENCODER_SUPPORT
+          if (encoderPosition)
+          {
+            if (!offsetGetStatus())
+              zOffsetNotifyError(false);
+            else
+              z_offset = offsetUpdateValueByEncoder(unit, encoderPosition > 0 ? 1 : -1);
+
+            encoderPosition = 0;
+          }
+        #endif
         break;
     }
 
     if (now != z_offset)
     {
       now = z_offset;
-      zOffsetDraw(offsetGetStatus(), now);
+      zOffsetDrawValue(offsetGetStatus(), now);
 
       // reset babystep every time Z offset is changed otherwise the set babystep value
       // will not be aligned with the new Z offset
-      babystepSetValue(BABYSTEP_DEFAULT_VALUE);
+      babystepReset();
     }
 
     loopProcess();
   }
 
-  saveSettings();  // save settings
+  // restore original ABL state
+  if (ablState == ENABLED)
+    storeCmd(infoMachineSettings.firmwareType != FW_REPRAPFW ? "M420 S1\n" : "G29 S1\n");
 }

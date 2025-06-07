@@ -9,7 +9,7 @@ extern "C" {
 #include <stdint.h>
 
 // Enable home offset
-void homeOffsetEnable(float shim);
+void homeOffsetEnable(bool skipZOffset, float shim);
 
 // Disable home offset
 void homeOffsetDisable(void);
@@ -26,8 +26,14 @@ float homeOffsetGetValue(void);
 // Reset Z offset value to default value
 float homeOffsetResetValue(void);
 
-// Update Z offset value
-float homeOffsetUpdateValue(float unit);
+// Decrease Z offset value
+float homeOffsetDecreaseValue(float unit);
+
+// Increase Z offset value
+float homeOffsetIncreaseValue(float unit);
+
+// Update Z offset value by encoder
+float homeOffsetUpdateValueByEncoder(float unit, int8_t direction);
 
 #ifdef __cplusplus
 }

@@ -26,8 +26,10 @@ void menuMain(void)
 
   KEY_VALUES key_num = KEY_IDLE;
 
-  if (infoMachineSettings.firmwareType == FW_REPRAPFW)
+  if (infoSettings.rrf_macros_enable)
+  {
     mainPageItems.items[5].label.index = LABEL_MACROS;
+  }
 
   if (infoSettings.status_screen != 1)
   {
@@ -37,24 +39,24 @@ void menuMain(void)
 
   menuDrawPage(&mainPageItems);
 
-  while (MENU_IS(menuMain))
+  while (infoMenu.menu[infoMenu.cur] == menuMain)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
     {
       case KEY_ICON_0:
-        OPEN_MENU(menuUnifiedHeat);
+        infoMenu.menu[++infoMenu.cur] = menuUnifiedHeat;
         break;
 
       case KEY_ICON_1:
-        OPEN_MENU(menuUnifiedMove);
+        infoMenu.menu[++infoMenu.cur] = menuUnifiedMove;
         break;
 
       case KEY_ICON_2:
         #ifdef LOAD_UNLOAD_M701_M702
-          OPEN_MENU(menuLoadUnload);
+          infoMenu.menu[++infoMenu.cur] = menuLoadUnload;
         #else
-          OPEN_MENU(menuExtrude);
+          infoMenu.menu[++infoMenu.cur] = menuExtrude;
         #endif
         break;
 
@@ -62,34 +64,34 @@ void menuMain(void)
         // Emergency Stop : Used for emergency stopping, a reset is required to return to operational mode.
         // it may need to wait for a space to open up in the command queue.
         // Enable EMERGENCY_PARSER in Marlin Firmware for an instantaneous M112 command.
-        sendEmergencyCmd("M112\n");
+        Serial_Puts(SERIAL_PORT, "M112\n");
         break;
 
       case KEY_ICON_4:
-        OPEN_MENU(menuTerminal);
+        infoMenu.menu[++infoMenu.cur] = menuTerminal;
         break;
 
       case KEY_ICON_5:
-        if (infoMachineSettings.firmwareType != FW_REPRAPFW)
+        if (infoSettings.rrf_macros_enable)
         {
-          OPEN_MENU(menuCustom);
+          infoFile.title[0] = 0;
+          infoMenu.menu[++infoMenu.cur] = menuCallMacro;
         }
         else
         {
-          strcpy(infoFile.path, "Macros");
-          OPEN_MENU(menuCallMacro);
+          infoMenu.menu[++infoMenu.cur] = menuCustom;
         }
         break;
 
       case KEY_ICON_6:
-        OPEN_MENU(menuSettings);
+        infoMenu.menu[++infoMenu.cur] = menuSettings;
         break;
 
       case KEY_ICON_7:
         if (infoSettings.status_screen != 1)
-          OPEN_MENU(menuPrint);
+          infoMenu.menu[++infoMenu.cur] = menuPrint;
         else
-          CLOSE_MENU();
+          infoMenu.cur--;
         break;
 
       default:
@@ -99,3 +101,4 @@ void menuMain(void)
     loopProcess();
   }
 }
+

@@ -4,6 +4,7 @@
 void loadNotificationItems(void)
 {
   LISTITEMS * itemlist = getCurListItems();
+  uint8_t n = 0;
 
   for (uint8_t i = 0; i < MAX_MSG_COUNT; i++)
   {
@@ -14,57 +15,56 @@ void loadNotificationItems(void)
       switch (tempNotify->style)
       {
         case DIALOG_TYPE_ERROR:
-          itemlist->items[i].icon = CHARICON_ERROR;
+          itemlist->items[i].icon = ICONCHAR_ERROR;
           break;
 
         case DIALOG_TYPE_ALERT:
-          itemlist->items[i].icon = CHARICON_ALERT;
+          itemlist->items[i].icon = ICONCHAR_ALERT;
           break;
 
         default:
-          itemlist->items[i].icon = CHARICON_INFO;
+          itemlist->items[i].icon = ICONCHAR_INFO;
           break;
       }
 
       itemlist->items[i].titlelabel.address = tempNotify->text;
+      n++;
     }
     else
     {
-      itemlist->items[i].icon = CHARICON_NULL;
+      itemlist->items[i].icon = ICONCHAR_BACKGROUND;
     }
 
     menuDrawListItem(&itemlist->items[i], i);
   }
+  //return n;
 }
 
 void menuNotification(void)
 {
   LISTITEMS notificationItems = {
     LABEL_NOTIFICATIONS,
-    // icon            item type   item title     item value text(only for custom value)
+    // icon                 ItemType    Item Title        item value text(only for custom value)
     {
-      {CHARICON_NULL,  LIST_LABEL, LABEL_DYNAMIC, LABEL_NULL},
-      {CHARICON_NULL,  LIST_LABEL, LABEL_DYNAMIC, LABEL_NULL},
-      {CHARICON_NULL,  LIST_LABEL, LABEL_DYNAMIC, LABEL_NULL},
-      {CHARICON_NULL,  LIST_LABEL, LABEL_DYNAMIC, LABEL_NULL},
-      {CHARICON_NULL,  LIST_LABEL, LABEL_DYNAMIC, LABEL_NULL},
-      {CHARICON_BLANK, LIST_LABEL, LABEL_CLEAR,   LABEL_NULL},
-      #ifdef DEBUG_MONITORING
-        {CHARICON_BLANK, LIST_LABEL, LABEL_INFO,    LABEL_NULL},
-      #else
-        {CHARICON_NULL,  LIST_LABEL, LABEL_NULL,    LABEL_NULL},
-      #endif
-      {CHARICON_BACK,  LIST_LABEL, LABEL_NULL,    LABEL_NULL},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_DYNAMIC,    LABEL_BACKGROUND},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_DYNAMIC,    LABEL_BACKGROUND},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_DYNAMIC,    LABEL_BACKGROUND},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_DYNAMIC,    LABEL_BACKGROUND},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_DYNAMIC,    LABEL_BACKGROUND},
+      {ICONCHAR_BLANK,      LIST_LABEL, LABEL_CLEAR,      LABEL_BACKGROUND},
+      {ICONCHAR_BACKGROUND, LIST_LABEL, LABEL_BACKGROUND, LABEL_BACKGROUND},
+      {ICONCHAR_BACK,       LIST_LABEL, LABEL_BACKGROUND, LABEL_BACKGROUND},
     }
   };
 
   KEY_VALUES key_num = KEY_IDLE;
 
   menuDrawListPage(&notificationItems);
+
   loadNotificationItems();
   setNotificationHandler(loadNotificationItems);
 
-  while (MENU_IS(menuNotification))
+  while (infoMenu.menu[infoMenu.cur] == menuNotification)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
@@ -72,8 +72,6 @@ void menuNotification(void)
       case KEY_ICON_0:
       case KEY_ICON_1:
       case KEY_ICON_2:
-      case KEY_ICON_3:
-      case KEY_ICON_4:
         replayNotification(key_num);
         break;
 
@@ -82,14 +80,8 @@ void menuNotification(void)
         loadNotificationItems();
         break;
 
-      #ifdef DEBUG_MONITORING
-        case KEY_ICON_6:
-          OPEN_MENU(menuMonitoring);
-          break;
-      #endif
-
       case KEY_ICON_7:
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:

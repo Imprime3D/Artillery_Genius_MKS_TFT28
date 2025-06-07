@@ -1,7 +1,7 @@
 #ifndef _GPIO_INIT_H_
 #define _GPIO_INIT_H_
 
-#include "variants.h"
+#include "stm32f10x.h"
 #include "STM32Fxx_Pins.h"
 
 /*

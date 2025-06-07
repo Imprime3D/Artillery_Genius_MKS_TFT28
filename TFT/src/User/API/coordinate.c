@@ -1,11 +1,14 @@
 #include "coordinate.h"
+#include "string.h"
 #include "includes.h"
 
 const char axis_id[TOTAL_AXIS] = {'X', 'Y', 'Z', 'E'};
 
 static COORDINATE targetPosition = {{0.0f, 0.0f, 0.0f, 0.0f}, 3000};
 static COORDINATE curPosition = {{0.0f, 0.0f, 0.0f, 0.0f}, 3000};
-E_AXIS_BACKUP eAxisBackup = {0, 0, false, false};
+
+// Buffer current z value measured in Level Corner = {Flag (new value trigger), position 1, position 2, position 3, position 4, probe accuracy(M48)}
+static float levelCornerPosition[6];
 
 /**
  * Obtained from "M114 E" instead of "M114", Because the coordinates of "M114" are not real-time coordinates.
@@ -18,10 +21,7 @@ static bool relative_e = false;
 // false means current position is unknown
 // false after M18/M84 disable stepper or power up, true after G28
 static bool position_known = false;
-
-static uint8_t coordUpdateSeconds = 0;
-static uint32_t coordNextUpdateTime = 0;
-static bool coordUpdateWaiting = false;
+static bool coordinateQueryWait = false;
 
 bool coorGetRelative(void)
 {
@@ -60,13 +60,15 @@ float coordinateGetAxisTarget(AXIS axis)
 
 void coordinateSetAxisTarget(AXIS axis, float position)
 {
-  if ((axis == E_AXIS) ? relative_e : relative_mode)
+  bool r = (axis == E_AXIS) ? relative_e || relative_mode : relative_mode;
+
+  if (r == false)
   {
-    targetPosition.axis[axis] += position;
+    targetPosition.axis[axis] = position;
   }
   else
   {
-    targetPosition.axis[axis] = position;
+    targetPosition.axis[axis] += position;
   }
 }
 
@@ -105,65 +107,27 @@ void coordinateSetAxisActual(AXIS axis, float position)
   curPosition.axis[axis] = position;
 }
 
-void coordinateGetAllActual(COORDINATE *tmp)
+void coordinateQuerySetWait(bool wait)
 {
-  memcpy(tmp, &curPosition, sizeof(curPosition));
+  coordinateQueryWait = wait;
 }
 
-float coordinateGetAxis(AXIS axis)
+void coordinateQuery(void)
 {
-  if (infoFile.source >= FS_ONBOARD_MEDIA)
-    return coordinateGetAxisActual(axis);
-  else
-    return coordinateGetAxisTarget(axis);
-}
-
-void coordinateQueryClearUpdateWaiting(void)
-{
-  coordUpdateWaiting = false;
-}
-
-/**
- * @brief query gantry position.
- * @param seconds: Pass 0 to query manually or disable auto report. Pass delay in seconds
- *                 for auto query if available in marlin.
- */
-void coordinateQuery(uint8_t seconds)
-{
-  // if RepRap or M114 previously sent and still waiting for a reply and not timed out, do nothing
-  if (infoMachineSettings.firmwareType == FW_REPRAPFW || (coordUpdateWaiting && (OS_GetTimeMs() < coordNextUpdateTime)))
-    return;
-
-  if (infoHost.tx_slots != 0 && infoHost.connected)
+  if (infoHost.connected == true && infoHost.wait == false && !coordinateQueryWait)
   {
-    if (infoMachineSettings.autoReportPos == 1)  // if auto report is enabled
-    {
-      if (seconds == 0)  // if manual querying is requested (if query interval is 0)
-        coordUpdateWaiting = storeCmd("M114\n");
-
-      if (seconds != coordUpdateSeconds)  // if query interval is changed
-      {
-        if (storeCmd("M154 S%d\n", seconds))  // turn on or off (if query interval is 0) auto report
-          coordUpdateSeconds = seconds;       // if gcode will be sent, avoid to enable auto report again on next
-      }                                       // function call if already enabled for that query interval
-    }
-    else  // if auto report is disabled
-    {
-      coordUpdateWaiting = storeCmd("M114\n");
-    }
+    coordinateQueryWait = storeCmd("M114\n");
   }
-
-  if (coordUpdateWaiting)
-    coordNextUpdateTime = OS_GetTimeMs() + ACK_QUERY_TIMEOUT;
 }
 
-void coordinateQueryTurnOff(void)
+// Get level corner position the measured Z offset from probe, see in ABL.c menu refreshLevelCornerValue(MENUITEMS levelItems) and value get from parseACK.c
+float GetLevelCornerPosition(int point)
 {
-  coordUpdateWaiting = false;
+  return levelCornerPosition[point];
+}
 
-  if (infoMachineSettings.autoReportPos == 1)  // if auto report is enabled, turn it off
-  {
-    storeCmd("M154 S0\n");
-    coordUpdateSeconds = 0;
-  }
+// Set level corner position the measured Z offset from probe, see in ABL.c menu refreshLevelCornerValue(MENUITEMS levelItems) and value get from parseACK.c
+void SetLevelCornerPosition(int point,float position)
+{
+  levelCornerPosition[point] = position;
 }

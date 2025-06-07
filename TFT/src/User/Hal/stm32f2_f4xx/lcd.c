@@ -1,6 +1,6 @@
+#include "includes.h"
 #include "lcd.h"
 #include "GPIO_Init.h"
-#include "delay.h"
 
 #ifdef STM32_HAS_FSMC
 
@@ -11,13 +11,13 @@ uint16_t LCD_RD_DATA(void)
   return ram;
 }
 
-void LCD_WriteReg(uint8_t LCD_Reg, uint16_t LCD_RegValue)
+void LCD_WriteReg(u8 LCD_Reg, u16 LCD_RegValue)
 {
   LCD->LCD_REG = LCD_Reg;
   LCD->LCD_RAM = LCD_RegValue;
 }
 
-uint16_t LCD_ReadReg(uint8_t LCD_Reg)
+u16 LCD_ReadReg(u8 LCD_Reg)
 {
   LCD_WR_REG(LCD_Reg);
   Delay_us(5);
@@ -52,19 +52,14 @@ void LCD_GPIO_Config(void)
   */
   GPIO_InitSet(PD4, MGPIO_MODE_AF_PP, GPIO_AF_FSMC);
   GPIO_InitSet(PD5, MGPIO_MODE_AF_PP, GPIO_AF_FSMC);
-
-#ifdef MKS_TFT35_V1_0  // different pinout for MKS_TFT35_V1_0
-  GPIO_InitSet(PD12, MGPIO_MODE_AF_PP, GPIO_AF_FSMC);
-#else
   GPIO_InitSet(PE2, MGPIO_MODE_AF_PP, GPIO_AF_FSMC);
-#endif
   GPIO_InitSet(PD7, MGPIO_MODE_AF_PP, GPIO_AF_FSMC);
 }
 
 void LCD_FSMC_Config(void)
 {
-  FSMC_NORSRAMInitTypeDef FSMC_NORSRAMInitStructure;
-  FSMC_NORSRAMTimingInitTypeDef readWriteTiming,writeTiming;
+  FSMC_NORSRAMInitTypeDef  FSMC_NORSRAMInitStructure;
+  FSMC_NORSRAMTimingInitTypeDef  readWriteTiming,writeTiming;
 
   RCC_AHB3PeriphClockCmd(RCC_AHB3Periph_FSMC, ENABLE);
 

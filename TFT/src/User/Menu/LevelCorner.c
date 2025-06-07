@@ -1,131 +1,174 @@
 #include "LevelCorner.h"
 #include "includes.h"
 
-// correlation between KEY position and measure point index
-const uint8_t valIconIndex[LEVELING_POINT_COUNT - 1] = {KEY_ICON_4, KEY_ICON_5, KEY_ICON_1, KEY_ICON_0};
+const MENUITEMS levelCornerItems = {
+  // title
+  LABEL_LEVEL_CORNER,
+  // icon                      label
+  {
+    {ICON_POINT_4,             LABEL_BACKGROUND},
+    {ICON_POINT_3,             LABEL_BACKGROUND},
+    {ICON_LEVEL_EDGE_DISTANCE, LABEL_DISTANCE},
+    {ICON_BLTOUCH,             LABEL_BACKGROUND},
+    {ICON_POINT_1,             LABEL_BACKGROUND},
+    {ICON_POINT_2,             LABEL_BACKGROUND},
+    {ICON_RESUME,              LABEL_START},
+    {ICON_BACK,                LABEL_BACK},
+  }
+};
 
-// buffer current Z value measured in Level Corner = {position 1, position 2, position 3, position 4}
-float levelCornerPosition[LEVELING_POINT_COUNT - 1] = {0};
+LIVE_INFO lvIcon;
 
-int16_t origLevelEdge = -1;
-
-uint8_t getLevelEdgeMin(void)
+void ScanLevelCorner(u8 pointer)
 {
-  // min edge limit for the probe with probe offset set in parseACK.c
-  int16_t maxXedge = getParameter(P_PROBE_OFFSET, AXIS_INDEX_X) + getParameter(P_HOME_OFFSET, AXIS_INDEX_X);
-  int16_t maxYedge = getParameter(P_PROBE_OFFSET, AXIS_INDEX_Y) + getParameter(P_HOME_OFFSET, AXIS_INDEX_Y);
+  s16 pointPosition[4][2] = {
+    {infoSettings.machine_size_min[X_AXIS] + infoSettings.level_edge, infoSettings.machine_size_min[Y_AXIS] + infoSettings.level_edge},
+    {infoSettings.machine_size_max[X_AXIS] - infoSettings.level_edge, infoSettings.machine_size_min[Y_AXIS] + infoSettings.level_edge},
+    {infoSettings.machine_size_max[X_AXIS] - infoSettings.level_edge, infoSettings.machine_size_max[Y_AXIS] - infoSettings.level_edge},
+    {infoSettings.machine_size_min[X_AXIS] + infoSettings.level_edge, infoSettings.machine_size_max[Y_AXIS] - infoSettings.level_edge},
+  };
 
-  maxXedge = ABS(maxXedge);
-  maxYedge = ABS(maxYedge);
+  if (infoSettings.touchmi_sensor != 0)
+  {
+    mustStoreCmd("M401\n");
+    mustStoreCmd("G30 E0 X%d Y%d\n", (s16)pointPosition[pointer][0], (s16)pointPosition[pointer][1]);
+    mustStoreCmd("G1 Z10\n");
+  }
+  else
+  {
+    mustStoreCmd("G30 E1 X%d Y%d\n", (s16)pointPosition[pointer][0], (s16)pointPosition[pointer][1]);
+  }
 
-  return MAX(maxXedge, maxYedge) + 1;
+  mustStoreCmd("M17 X Y Z\n");
+  mustStoreCmd("M18 S0 X Y Z\n");
 }
 
-uint8_t getLevelEdgeDefault(void)
+void refreshLevelCornerValue(MENUITEMS levelItems)
 {
-  return MAX(origLevelEdge, getLevelEdgeMin());
+  char tempstr[10];
+  int valIndex[4] = {4,5,1,0};
+  int valPos;
+  int valPosSub;
+  LIVE_INFO lvIcon;
+
+  if ((int)GetLevelCornerPosition(0) != 0)
+  {
+    lvIcon.lines[0].pos = ss_val_point;
+    lvIcon.lines[1].pos = ss_val_point;
+    lvIcon.lines[2].pos = ss_val_point;
+    lvIcon.lines[3].pos = ss_val_point;
+
+    if (((int)GetLevelCornerPosition(0) >= 1) && ((int)GetLevelCornerPosition(0) <= 4))
+    {
+      valPos = (int)GetLevelCornerPosition(0);
+      valPosSub = (int)GetLevelCornerPosition(0)-1;
+      sprintf(tempstr, "%1.4f", GetLevelCornerPosition(valPos));
+      lvIcon.lines[valPosSub].text = (uint8_t *)tempstr;
+      showLevelCornerLiveInfo(valIndex[valPosSub], valPosSub, &lvIcon, &levelItems.items[valIndex[valPosSub]]);
+      SetLevelCornerPosition(0, 0);
+    }
+  }
 }
 
-void setLevelEdgeMin(void)
+void refreshProbeAccuracy(MENUITEMS levelItems)
 {
-  infoSettings.level_edge = getLevelEdgeMin();
-}
+  char tempstr[8];
+  LIVE_INFO lvIcon;
+  LIVE_INFO lvIconM48;
 
-// draw values under icons
-void refreshValue(MENUITEMS * levelItems, uint8_t index)
-{
-  sprintf((char *)levelItems->items[valIconIndex[index]].label.address, "%.4f", levelCornerPosition[index]);
-  menuDrawIconText(&levelItems->items[valIconIndex[index]], valIconIndex[index]);
+  if ((int)GetLevelCornerPosition(0) == 5)
+  {
+    lvIcon.lines[4].pos = ss_val_point;
+    sprintf(tempstr, "%1.4f", GetLevelCornerPosition(5));
+    lvIcon.lines[4].text = (uint8_t *)tempstr;
+    showLevelCornerLiveInfo(3, 4, &lvIcon, &levelItems.items[3]);
+    lvIconM48.lines[0].pos = ss_val_point;
+    sprintf(tempstr, "%s", " M48    ");
+    lvIconM48.lines[0].text = (uint8_t *)tempstr;
+    showTextOnIcon(3, 0, &lvIconM48, &levelCornerItems.items[3]);
+    SetLevelCornerPosition(0, 0);
+  }
 }
 
 void menuLevelCorner(void)
 {
-  MENUITEMS levelCornerItems = {
-    // title
-    LABEL_LEVEL_CORNER,
-    // icon                      label
-    {
-      {ICON_POINT_4,             LABEL_NULL},
-      {ICON_POINT_3,             LABEL_NULL},
-      {ICON_LEVEL_EDGE_DISTANCE, LABEL_DISTANCE},
-      {ICON_Z_HOME,              LABEL_HOME},
-      {ICON_POINT_1,             LABEL_NULL},
-      {ICON_POINT_2,             LABEL_NULL},
-      {ICON_RESUME,              LABEL_START},
-      {ICON_BACK,                LABEL_BACK},
-    }
-  };
-
   KEY_VALUES key_num = KEY_IDLE;
-  char iconText[LEVELING_POINT_COUNT - 1][10] = {"---", "---", "---", "---"};
-
-  if (origLevelEdge < 0)  // initialize leveling edge value to be used for leveling corner if not yet initialized (-1)
-  {
-    origLevelEdge = infoSettings.level_edge;          // save leveling edge value to restore after leveling corner completion
-    infoSettings.level_edge = getLevelEdgeDefault();  // set leveling edge value for leveling corner
-  }
-
-  for (uint8_t i = 0; i < LEVELING_POINT_COUNT - 1; i++)
-  {
-    levelCornerItems.items[valIconIndex[i]].label.address = (uint8_t *)iconText[i];
-  }
+  int ReadValuestored = 6;
 
   menuDrawPage(&levelCornerItems);
 
-  while (MENU_IS(menuLevelCorner))
+  // Init Probe Offset in parseAck to get probe offset X and Y
+  mustStoreCmd("M851\n");
+
+  // Init Coordinate
+  mustStoreCmd("G28\n");
+
+  // Check min edge limit for the probe with probe offset set in parseACK.c
+  uint8_t edge_min = MAX(ABS(getParameter((s16)P_PROBE_OFFSET, X_STEPPER)),ABS((s16)getParameter(P_PROBE_OFFSET, Y_STEPPER))) + 1;
+  if (infoSettings.level_edge < edge_min)
+  {
+    infoSettings.level_edge = ((LEVELING_EDGE_DISTANCE >= edge_min) ? LEVELING_EDGE_DISTANCE : edge_min);
+  }
+
+  while (infoMenu.menu[infoMenu.cur] == menuLevelCorner)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
     {
       case KEY_ICON_0:
-      case KEY_ICON_1:
-      case KEY_ICON_4:
-      case KEY_ICON_5:
+        ScanLevelCorner(3);
+        break;
+
       case KEY_ICON_6:
-        for (uint8_t i = 0; i < LEVELING_POINT_COUNT - 1; i++)
-        {
-          if (key_num < KEY_ICON_6 && key_num != valIconIndex[i])
-            continue;
+        ScanLevelCorner(0);
+        ScanLevelCorner(1);
+        ScanLevelCorner(2);
+        ScanLevelCorner(3);
+        break;
 
-          levelingProbePoint(i);
-
-          // wait until point probing is executed
-          TASK_LOOP_WHILE(levelingGetProbedPoint() == LEVEL_NO_POINT);
-
-          levelCornerPosition[i] = levelingGetProbedZ();
-          refreshValue(&levelCornerItems, i);
-          levelingResetProbedPoint();  // reset to check for new updates
-        }
-
+      case KEY_ICON_1:
+        ScanLevelCorner(2);
         break;
 
       case KEY_ICON_2:
-      {
-        uint8_t curLevelEdge = infoSettings.level_edge;
-
-        infoSettings.level_edge = editIntValue(LEVELING_EDGE_DISTANCE_MIN, LEVELING_EDGE_DISTANCE_MAX,
-                                               getLevelEdgeDefault(), infoSettings.level_edge);
-
-        if (curLevelEdge >= getLevelEdgeMin() && infoSettings.level_edge < getLevelEdgeMin())  // if new value is below min limit
-          popupDialog(DIALOG_TYPE_QUESTION, LABEL_WARNING, LABEL_LEVEL_CORNER_INFO, LABEL_CONFIRM, LABEL_CANCEL, setLevelEdgeMin, NULL, NULL);
-
+        {
+          infoSettings.level_edge = editIntValue(edge_min, LEVELING_EDGE_DISTANCE_MAX, LEVELING_EDGE_DISTANCE_DEFAULT, infoSettings.level_edge);
+          menuDrawPage(&levelCornerItems);
+          ReadValuestored = 6;
+        }
         break;
-      }
+
+      case KEY_ICON_4:
+        ScanLevelCorner(0);
+        break;
 
       case KEY_ICON_3:
-        mustStoreCmd("G28 Z\n");
+        mustStoreCmd("M48\n");
+        mustStoreCmd("M17 X Y Z\n");
+        mustStoreCmd("M18 S0 X Y Z\n");
+        break;
+
+      case KEY_ICON_5:
+        ScanLevelCorner(1);
         break;
 
       case KEY_ICON_7:
-        infoSettings.level_edge = origLevelEdge;  // restore original leveling edge value
-        origLevelEdge = -1;
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:
         break;
     }
 
+    while (ReadValuestored != 0)
+    {
+      SetLevelCornerPosition(0, ReadValuestored--);
+      refreshLevelCornerValue(levelCornerItems);
+      refreshProbeAccuracy(levelCornerItems);
+    }
+
+    refreshProbeAccuracy(levelCornerItems);
+    refreshLevelCornerValue(levelCornerItems);
     loopProcess();
   }
 }

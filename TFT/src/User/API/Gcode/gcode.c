@@ -3,9 +3,39 @@
 
 REQUEST_COMMAND_INFO requestCommandInfo = {0};
 
-static void waitForResponse(void)
+static void resetRequestCommandInfo(
+  const char *string_start,   // The magic to identify the start
+  const char *string_stop,    // The magic to identify the stop
+  const char *string_error0,  // The first magic to identify the error response
+  const char *string_error1,  // The second error magic
+  const char *string_error2   // The third error magic
+)
 {
-  TASK_LOOP_WHILE(!requestCommandInfo.done);
+  requestCommandInfo.cmd_rev_buf = malloc(CMD_MAX_REV);
+  while (!requestCommandInfo.cmd_rev_buf)
+    ;  // malloc failed
+  memset(requestCommandInfo.cmd_rev_buf, 0, CMD_MAX_REV);
+  requestCommandInfo.startMagic = string_start;
+  requestCommandInfo.stopMagic = string_stop;
+  requestCommandInfo.errorMagic[0] = string_error0;
+  requestCommandInfo.errorMagic[1] = string_error1;
+  requestCommandInfo.errorMagic[2] = string_error2;
+  if (string_error0)
+    requestCommandInfo.error_num = 1;
+  if (string_error1)
+    requestCommandInfo.error_num = 2;
+  if (string_error2)
+    requestCommandInfo.error_num = 3;
+
+  while (infoCmd.count || infoHost.wait)
+  {
+    loopProcess();  // Wait for the communication to be clean before requestCommand
+  }
+
+  requestCommandInfo.inWaitResponse = true;
+  requestCommandInfo.inResponse = false;
+  requestCommandInfo.done = false;
+  requestCommandInfo.inError = false;
 }
 
 bool requestCommandInfoIsRunning(void)
@@ -15,126 +45,38 @@ bool requestCommandInfoIsRunning(void)
 
 void clearRequestCommandInfo(void)
 {
-  if (requestCommandInfo.cmd_rev_buf != NULL)
-  {
-    free(requestCommandInfo.cmd_rev_buf);
-    requestCommandInfo.cmd_rev_buf = NULL;
-  }
+  free(requestCommandInfo.cmd_rev_buf);
 }
 
-void abortRequestCommandInfo(void)
-{
-  requestCommandInfo.inWaitResponse = false;
-  requestCommandInfo.inResponse = false;
-  requestCommandInfo.done = true;
-  requestCommandInfo.inError = true;
-}
+/*
+    Send M21 command and wait for response
 
-static void resetRequestCommandInfo(
-  const char * string_start,   // The magic to identify the start
-  const char * string_stop,    // The magic to identify the stop
-  const char * string_error0,  // The first magic to identify the error response
-  const char * string_error1,  // The second error magic
-  const char * string_error2   // The third error magic
-)
-{
-  clearRequestCommandInfo();  // release requestCommandInfo.cmd_rev_buf before allocating a new one
-
-  requestCommandInfo.cmd_rev_buf = malloc(CMD_MAX_REV);
-
-  while (!requestCommandInfo.cmd_rev_buf)
-  {
-    ;  // malloc failed
-  }
-
-  memset(requestCommandInfo.cmd_rev_buf, 0, CMD_MAX_REV);
-  requestCommandInfo.startMagic = string_start;
-  requestCommandInfo.stopMagic = string_stop;
-  requestCommandInfo.errorMagic[0] = string_error0;
-  requestCommandInfo.errorMagic[1] = string_error1;
-  requestCommandInfo.errorMagic[2] = string_error2;
-
-  if (string_error0)
-    requestCommandInfo.error_num = 1;
-  if (string_error1)
-    requestCommandInfo.error_num = 2;
-  if (string_error2)
-    requestCommandInfo.error_num = 3;
-
-  TASK_LOOP_WHILE(isNotEmptyCmdQueue());  // wait for the communication to be clean
-
-  requestCommandInfo.stream_handler = NULL;
-  requestCommandInfo.inWaitResponse = true;
-  requestCommandInfo.inResponse = false;
-  requestCommandInfo.done = false;
-  requestCommandInfo.inError = false;
-}
-
-void detectAdvancedOk(void)
-{
-  uint8_t advanced_ok = GET_BIT(infoSettings.general_settings, INDEX_ADVANCED_OK);  // backup the configured ADVANCED_OK setting
-  uint8_t cmd_index = 0;
-
-  // temporary disable the ADVANCED_OK feature (if enabled) just to allow the TFT to send only one gcode
-  // per time and the mainboard to reply with an ADVANCED_OK response with the maximum available buffers
-  SET_BIT_OFF(infoSettings.general_settings, INDEX_ADVANCED_OK);
-
-  TASK_LOOP_WHILE(isPendingCmd() && isNotEmptyCmdQueue());  // wait for the communication to be clean
-
-  resetRequestCommandInfo("ok",   // The magic to identify the start
-                          "ok",   // The magic to identify the stop
-                          NULL,   // The first magic to identify the error response
-                          NULL,   // The second error magic
-                          NULL);  // The third error magic
-
-  // send any gcode replied by the mainboard with a regular OK response ("ok\n") or an ADVANCED_OK response (e.g. "ok N10 P15 B3\n")
-  mustStoreCmd("M220\n");
-
-  waitForResponse();  // wait for response
-
-  while (requestCommandInfo.cmd_rev_buf[cmd_index] != '\0')
-  {
-    if (requestCommandInfo.cmd_rev_buf[cmd_index++] == 'B')
-    {
-      if (strtol(&requestCommandInfo.cmd_rev_buf[cmd_index], NULL, 10) != 0)  // if different than 0
-      {
-        // set infoHost.target_tx_slots and infoSettings.tx_slots to the value detected by TFT
-        infoHost.target_tx_slots = infoSettings.tx_slots = strtol(&requestCommandInfo.cmd_rev_buf[cmd_index], NULL, 10);
-      }
-    }
-  }
-
-  clearRequestCommandInfo();
-
-  SET_BIT_VALUE(infoSettings.general_settings, INDEX_ADVANCED_OK, advanced_ok);  // restore the configured ADVANCED_OK setting
-}
-
-/**
- * Send M21 command and wait for response
- *
- * SENDING: M21
- * echo:SD card ok
- * echo:No SD card
- */
+    >>> M21
+    SENDING:M21
+    echo:SD card ok
+    echo:No SD card
+*/
 bool request_M21(void)
 {
-  resetRequestCommandInfo("SD card ",             // The magic to identify the start
+  const char * sdString = (infoMachineSettings.firmwareType == FW_REPRAPFW) ? "card mounted " : "SD card ";
+  const char * errString1 = (infoMachineSettings.firmwareType == FW_REPRAPFW) ? "Error" : "No SD card";
+
+  resetRequestCommandInfo(sdString,               // The magic to identify the start
                           "ok",                   // The magic to identify the stop
-                          "No SD card",           // The first magic to identify the error response
+                          errString1,             // The first magic to identify the error response
                           "SD init fail",         // The second error magic
                           "volume.init failed");  // The third error magic
 
-  mustStoreCmd((infoMachineSettings.multiVolume == ENABLED) ? ((infoFile.onboardSource == BOARD_SD) ? "M21 S\n" : "M21 U\n") : "M21\n");
+  mustStoreCmd("M21\n");
 
-  waitForResponse();  // wait for response
-
+  // Wait for response
+  while (!requestCommandInfo.done) { loopProcess(); }
   clearRequestCommandInfo();
-
   // Check reponse
   return !requestCommandInfo.inError;
 }
 
-char * request_M20(void)
+char *request_M20(void)
 {
   resetRequestCommandInfo("Begin file list",  // The magic to identify the start
                           "End file list",    // The magic to identify the stop
@@ -142,24 +84,24 @@ char * request_M20(void)
                           NULL,               // The second error magic
                           NULL);              // The third error magic
 
-  if (infoMachineSettings.longFilename == ENABLED)  // if long filename is supported
-    mustStoreCmd("M20 L\n");  // L option is supported since Marlin 2.0.9
-  else
-    mustStoreCmd("M20\n");
+  mustStoreCmd("M20\n");
 
-  waitForResponse();  // wait for response
-
-  //clearRequestCommandInfo();  // shall be call after copying the buffer ...
+  // Wait for response
+  while (!requestCommandInfo.done)
+  {
+    loopProcess();
+  }
+  //clearRequestCommandInfo();  //shall be call after copying the buffer ...
   return requestCommandInfo.cmd_rev_buf;
 }
 
-/**
- * M33 retrieve long filename from short filename
- *
- * SENDING: M33 miscel~1/armchair/armcha~1.gco
- * /Miscellaneous/Armchair/Armchair.gcode
+/*
+ * M33 retrieve long filename from short file name
+ *   M33 miscel~1/armchair/armcha~1.gco
+ * Output:
+ *   /Miscellaneous/Armchair/Armchair.gcode
  */
-char * request_M33(const char * filename)
+char *request_M33(char *filename)
 {
   resetRequestCommandInfo("/",                   // The magic to identify the start
                           "ok",                  // The magic to identify the stop
@@ -172,32 +114,33 @@ char * request_M33(const char * filename)
   else
     mustStoreCmd("M33 %s\n", filename);
 
-  waitForResponse();  // wait for response
-
-  //clearRequestCommandInfo();  // shall be call after copying the buffer
+  // Wait for response
+  while (!requestCommandInfo.done)
+  {
+    loopProcess();
+  }
+  //clearRequestCommandInfo(); //shall be call after copying the buffer ...
   return requestCommandInfo.cmd_rev_buf;
 }
 
 /**
  * Select the file to print
  *
- * SENDING: M23 YEST~1/TEST2/PI3MK2~5.GCO
+ * >>> m23 YEST~1/TEST2/PI3MK2~5.GCO
+ * SENDING:M23 YEST~1/TEST2/PI3MK2~5.GCO
  * echo:Now fresh file: YEST~1/TEST2/PI3MK2~5.GCO
  * File opened: PI3MK2~5.GCO Size: 11081207
  * File selected
  *
- * File information in RepRapFirmware
- *
- * SENDING: M36 3DBenchy.gcode
+ * file information in RepRapFirmware
+ * SENDING:M36 3DBenchy.gcode
  * echo: {"err":0,"size":2758088,"lastModified":"2020-10-20T17:12:18","height":49.00,"firstLayerHeight":0.20,"layerHeight":0.20,"printTime":6173,"filament":[4065.3],"generatedBy":"SuperSlicer 2.2.53 on 2020-10-20 at 15:12:18 UTC"}
- */
-long request_M23_M36(const char * filename)
+ **/
+long request_M23_M36(char *filename)
 {
-  long size = 0;  // initialize to 0 in case of error
-  const char * sizeTag;
-  char * strPtr;
-
-  if (infoMachineSettings.firmwareType != FW_REPRAPFW)  // all other firmwares except RepRap firmware
+  uint8_t offset = 5;
+  const char *sizeTag;
+  if (infoMachineSettings.firmwareType != FW_REPRAPFW)  // all other firmwares except reprap firmware
   {
     resetRequestCommandInfo("File opened",    // The magic to identify the start
                             "File selected",  // The magic to identify the stop
@@ -205,12 +148,10 @@ long request_M23_M36(const char * filename)
                             NULL,             // The second error magic
                             NULL);            // The third error magic
 
-    // skip source and first "/" character (e.g. "oMD:/sub_dir/cap2.gcode" -> "sub_dir/cap2.gcode")
-    mustStoreCmd("M23 %s\n", filename + strlen(getFS()) + 1);
-
+    mustStoreCmd("M23 %s\n", filename);
     sizeTag = "Size:";
   }
-  else  // RepRap firmware
+  else // reprap firmware
   {
     resetRequestCommandInfo("{\"err\"",  // The magic to identify the start
                             "}",         // The magic to identify the stop
@@ -218,110 +159,161 @@ long request_M23_M36(const char * filename)
                             NULL,        // The second error magic
                             NULL);       // The third error magic
 
-    mustStoreCmd("M36 /%s\n", filename);
-
-    sizeTag = "size\":";  // RepRap firmware reports size JSON
+    mustStoreCmd("M36 %s\n", filename);
+    offset = 6;
+    sizeTag = "size\":";  // reprap firmware reports size JSON
   }
 
-  waitForResponse();  // wait for response
-
+  // Wait for response
+  while (!requestCommandInfo.done) loopProcess();
   if (requestCommandInfo.inError)
   {
     clearRequestCommandInfo();
-
-    return size;
+    return 0;
   }
-
   if (infoMachineSettings.firmwareType == FW_REPRAPFW)
-    mustStoreCmd("M23 /%s\n", filename);  // send M23 for RepRap firmware
-
-  // Find file size and report it
-  strPtr = strstr(requestCommandInfo.cmd_rev_buf, sizeTag);
-
-  if (strPtr != NULL)
-    size = strtol(strPtr + strlen(sizeTag), NULL, 10);
-
+    mustStoreCmd("M23 %s\n", filename);  //send M23 for reprap firmware
+  // Find file size and report its.
+  char *ptr;
+  long size = strtol(strstr(requestCommandInfo.cmd_rev_buf, sizeTag) + offset, &ptr, 10);
   clearRequestCommandInfo();
-
   return size;
 }
 
 /**
- * Start or resume print
- */
-void request_M24(int pos)
+ * Start o resume print
+ **/
+bool request_M24(int pos)
 {
   if (pos == 0)
     mustStoreCmd("M24\n");
   else
     mustStoreCmd("M24 S%d\n", pos);
+  return true;
+}
+
+/**
+ * Abort print
+ **/
+bool request_M524(void)
+{
+  mustStoreCmd("M524\n");
+  return true;
 }
 
 /**
  * Pause print
- */
-void request_M25(void)
+ **/
+bool request_M25(void)
 {
   mustStoreCmd("M25 P1\n");
+  return true;
 }
 
 /**
- * @brief Print status (start auto report)
- * @param seconds: Pass 0 to disable auto report. Pass delay in seconds
- *                 for auto query if available in marlin.
- *
+ * Print status (start auto report)
  * ->  SD printing byte 123/12345
  * ->  Not SD printing
- */
-void request_M27(uint8_t seconds)
+ **/
+bool request_M27(int seconds)
 {
-  if (infoMachineSettings.autoReportSDStatus == 1)
-    mustStoreCmd("M27 S%d\n", seconds);
+  mustStoreCmd("M27 S%d\n", seconds);
+  return true;
 }
 
 /**
  * Park Head / Pause Print
- */
-void request_M125(void)
+ **/
+bool request_M125(void)
 {
   mustStoreCmd("M125 P1\n");
+  return true;
 }
 
 /**
- * Stop or Unconditional stop in RepRap firmware
- */
-void request_M0(void)
+ * Stop or Unconditional stop in reprap firmware
+ **/
+bool request_M0(void)
 {
-  mustStoreCmd("M0\n");
+  mustStoreCmd("M0 \n");
+  return true;
 }
 
-void request_M98(const char * filename)
+void send_and_wait_M20(const char* command)
 {
-  CMD command;
+  uint32_t timeout = ((uint32_t)0x000FFFFF);
+  uint32_t waitloops = ((uint32_t)0x00000006);
 
-  snprintf(command, CMD_MAX_SIZE, "M98 P/%s\n", filename);
-  rrfStatusSetMacroBusy();
-
-  mustStoreCmd(command);
-
-  // prevent a race condition when rrfStatusQuery returns !busy before executing the macro
-  TASK_LOOP_WHILE(isEnqueued(command));
-
-  rrfStatusQueryFast();
-
-  // Wait for macro to complete
-  TASK_LOOP_WHILE(rrfStatusIsBusy());
-
-  rrfStatusQueryNormal();
-}
-
-// nextdir path must start with "macros" or "gcodes"
-void request_M20_rrf(const char * nextdir, bool with_ts, FP_STREAM_HANDLER handler)
-{
   resetRequestCommandInfo("{", "}", "Error:", NULL, NULL);
-  requestCommandInfo.stream_handler = handler;
+  mustStoreCmd(command);
+  while ((strstr(requestCommandInfo.cmd_rev_buf, "dir") == NULL) && (waitloops > 0x00))  //(!find_part("dir"))
+  {
+    waitloops--;
+    timeout = ((uint32_t)0x0000FFFF);
+    while ((!requestCommandInfo.done) && (timeout > 0x00))
+    {
+      loopBackEnd();
+      timeout--;
+    }
+    if (timeout <= 0x00)
+    {
+      uint16_t wIndex = (dmaL1Data[SERIAL_PORT].wIndex == 0) ? ACK_MAX_SIZE : dmaL1Data[SERIAL_PORT].wIndex;
+      if (dmaL1Data[SERIAL_PORT].cache[wIndex - 1] == '}')  // \n fehlt
+      {
+        BUZZER_PLAY(sound_notify);  // for DEBUG
+        dmaL1Data[SERIAL_PORT].cache[wIndex] = '\n';
+        dmaL1Data[SERIAL_PORT].cache[wIndex + 1] = 0;
+        dmaL1Data[SERIAL_PORT].wIndex++;
+        infoHost.rx_ok[SERIAL_PORT] = true;
+      }
+    }
+    if (dmaL1NotEmpty(SERIAL_PORT) && !infoHost.rx_ok[SERIAL_PORT])
+    {
+      infoHost.rx_ok[SERIAL_PORT] = true;
+    }
+    if (strstr(requestCommandInfo.cmd_rev_buf, "dir") == NULL)
+    {
+      clearRequestCommandInfo();
+      resetRequestCommandInfo("{", "}", "Error:", NULL, NULL);
+      mustStoreCmd("\n");
+    }
+  }
+  return;  // requestCommandInfo.cmd_rev_buf;
+}
 
-  mustStoreCmd("M20 S%d P\"/%s\"\n", with_ts ? 3 : 2, nextdir);
+char *request_M20_macros(char *nextdir)
+{
+  // set pause Flag
+  //infoHost.pauseGantry = true;
+  //waitPortReady();
+  clearRequestCommandInfo();
+  char command[256];
+  if ((nextdir == NULL) || strchr(nextdir, '/') == NULL)
+  {
+    strncpy(command, "M20 S2 P\"/macros\"\n", 256);
+  }
+  else
+  {
+    snprintf(command, 256, "M20 S2 P\"/macros/%s\"\n", nextdir);
+  }
+  // Send GCode and wait for responce
+  send_and_wait_M20(command);
+  // reset pause Flag
+  //infoHost.pauseGantry = false;
+  //GUI_Clear(BACKGROUND_COLOR);
+  return requestCommandInfo.cmd_rev_buf;
+}
 
-  waitForResponse();  // wait for response
+bool request_M98(char *filename)
+{
+  char command[256];
+  snprintf(command, 256, "M98 P/macros/%s\n", filename);
+  resetRequestCommandInfo("", "ok", "Warning:", "Warning:", "Warning:");
+  mustStoreCmd(command);
+  // Wait for response
+  while (!requestCommandInfo.done)
+  {
+    loopProcess();
+  }
+  return true;
 }

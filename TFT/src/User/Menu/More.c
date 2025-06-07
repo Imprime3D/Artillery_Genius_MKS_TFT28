@@ -1,5 +1,5 @@
-#include "More.h"
 #include "includes.h"
+#include "More.h"
 
 const MENUITEMS moreItems = {
   // title
@@ -23,14 +23,14 @@ const MENUITEMS moreItems = {
 
 void isPauseExtrude(void)
 {
-  if (pausePrint(true, PAUSE_NORMAL))
-    REPLACE_MENU(menuExtrude);
+  if (printPause(true, false))
+    infoMenu.menu[infoMenu.cur] = menuExtrude;
 }
 
 void isPauseLoadUnload(void)
 {
-  if (pausePrint(true, PAUSE_NORMAL))
-    REPLACE_MENU(menuLoadUnload);
+  if (printPause(true, false))
+    infoMenu.menu[infoMenu.cur] = menuLoadUnload;
 }
 
 void menuMore(void)
@@ -39,59 +39,61 @@ void menuMore(void)
 
   menuDrawPage(&moreItems);
 
-  while (MENU_IS(menuMore))
+  while (infoMenu.menu[infoMenu.cur] == menuMore)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
     {
       case KEY_ICON_0:
-        OPEN_MENU(menuHeat);
+        infoMenu.menu[++infoMenu.cur] = menuHeat;
         break;
 
       case KEY_ICON_1:
-        OPEN_MENU(menuFan);
+        infoMenu.menu[++infoMenu.cur] = menuFan;
         break;
 
       case KEY_ICON_2:
         if (isPrinting() && !isPaused())  // need paused before extrude
         {
-          popupDialog(DIALOG_TYPE_ALERT, LABEL_WARNING, LABEL_IS_PAUSE, LABEL_CONFIRM, LABEL_CANCEL, isPauseExtrude, NULL, NULL);
+          setDialogText(LABEL_WARNING, LABEL_IS_PAUSE, LABEL_CONFIRM, LABEL_CANCEL);
+          showDialog(DIALOG_TYPE_ALERT, isPauseExtrude, NULL, NULL);
         }
         else
         {
-          OPEN_MENU(menuExtrude);
+          infoMenu.menu[++infoMenu.cur] = menuExtrude;
         }
         break;
 
       case KEY_ICON_3:
-        OPEN_MENU(menuSpeed);
+        infoMenu.menu[++infoMenu.cur] = menuSpeed;
         break;
 
       case KEY_ICON_4:
-        OPEN_MENU(menuFeatureSettings);
+        infoMenu.menu[++infoMenu.cur] = menuFeatureSettings;
         break;
 
       case KEY_ICON_5:
-        OPEN_MENU(menuMachineSettings);
+        infoMenu.menu[++infoMenu.cur] = menuMachineSettings;
         break;
 
       case KEY_ICON_6:
         #ifdef LOAD_UNLOAD_M701_M702
           if (isPrinting() && !isPaused())  // need paused before extrude
           {
-            popupDialog(DIALOG_TYPE_ALERT, LABEL_WARNING, LABEL_IS_PAUSE, LABEL_CONFIRM, LABEL_CANCEL, isPauseLoadUnload, NULL, NULL);
+            setDialogText(LABEL_WARNING, LABEL_IS_PAUSE, LABEL_CONFIRM, LABEL_CANCEL);
+            showDialog(DIALOG_TYPE_ALERT, isPauseLoadUnload, NULL, NULL);
           }
           else
           {
-            OPEN_MENU(menuLoadUnload);
+            infoMenu.menu[++infoMenu.cur] = menuLoadUnload;
           }
         #else
-          OPEN_MENU(menuTerminal);
+          infoMenu.menu[++infoMenu.cur] = menuTerminal;
         #endif
         break;
 
       case KEY_ICON_7:
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:

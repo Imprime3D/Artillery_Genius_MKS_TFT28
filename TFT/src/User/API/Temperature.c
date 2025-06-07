@@ -1,291 +1,303 @@
-#include "Temperature.h"
 #include "includes.h"
+#include "Temperature.h"
 
-const char * const heaterID[MAX_HEATER_COUNT]      = HEAT_SIGN_ID;
-const char * const heatDisplayID[MAX_HEATER_COUNT] = HEAT_DISPLAY_ID;
-const char * const heatShortID[MAX_HEATER_COUNT]   = HEAT_SHORT_ID;
-const char * const heatCmd[MAX_HEATER_COUNT]       = HEAT_CMD;
-const char * const heatWaitCmd[MAX_HEATER_COUNT]   = HEAT_WAIT_CMD;
-const char * const extruderDisplayID[]             = EXTRUDER_ID;
-const char * const toolChange[]                    = TOOL_CHANGE;
+const char *const heaterID[MAX_HEATER_COUNT]      = HEAT_SIGN_ID;
+const char *const heatDisplayID[MAX_HEATER_COUNT] = HEAT_DISPLAY_ID;
+const char *const heatCmd[MAX_HEATER_COUNT]       = HEAT_CMD;
+const char *const heatWaitCmd[MAX_HEATER_COUNT]   = HEAT_WAIT_CMD;
 
-static HEATER   heater = {{}, NOZZLE0};
-static uint8_t  heat_send_waiting = 0;
-static uint8_t  heat_feedback_waiting = 0;
+static HEATER  heater = {{}, NOZZLE0};
+static int16_t lastTarget[MAX_HEATER_COUNT] = {0};
+static uint8_t heat_update_seconds = TEMPERATURE_QUERY_SLOW_SECONDS;
+static bool    heat_update_waiting = false;
+static bool    heat_send_waiting[MAX_HEATER_COUNT];
 
-static uint8_t  heat_update_seconds = TEMPERATURE_QUERY_SLOW_SECONDS;
-static uint32_t heat_next_update_time = 0;
-static bool     heat_update_waiting = false;
+uint32_t nextHeatCheckTime = 0;
+#define AUTOREPORT_TIMEOUT (nextHeatCheckTime + 3000)  // update interval + 3 second grace period
 
-#define AUTOREPORT_TIMEOUT 3000  // 3 second grace period
-
-// verify that the heater index is valid, and fix the index of multiple in and 1 out tool nozzles
-static uint8_t heaterIndexFix(uint8_t index)
+static uint8_t fixHeaterIndex(uint8_t index)
 {
-  if (index == BED && infoSettings.bed_en)  // bed
-    return index;
-
-  if (index == CHAMBER && infoSettings.chamber_en)  // chamber
-    return index;
-
-  if (index < infoSettings.hotend_count)  // vaild tool nozzle
-    return index;
-
-  if (index < infoSettings.ext_count && infoSettings.hotend_count == 1)  // "multi-extruder" that shares a single nozzle
-    return NOZZLE0;
-
-  return INVALID_HEATER;  // invalid heater
+  if (infoSettings.hotend_count == 1)
+    index = (index < MAX_HOTEND_COUNT) ? NOZZLE0 : index;
+  return index;
 }
 
-void heatSetTargetTemp(uint8_t index, const int16_t temp, const TEMP_SOURCE tempSource)
+//Set target temperature
+void heatSetTargetTemp(uint8_t index, int16_t temp)
 {
-  index = heaterIndexFix(index);
-
-  if (index == INVALID_HEATER)
-    return;
-
-  switch (tempSource)
+  index = fixHeaterIndex(index);
+  heater.T[index].target = NOBEYOND(0, temp, infoSettings.max_temp[index]);
+  if (heater.T[index].target + 2 > heater.T[index].current)
   {
-    case FROM_HOST:
-      if (GET_BIT(heat_feedback_waiting, index))
-        SET_BIT_OFF(heat_feedback_waiting, index);
-      else if (!GET_BIT(heat_send_waiting, index))
-        heater.T[index].target = temp;
-      break;
-
-    case FROM_GUI:
-      heater.T[index].target = NOBEYOND(0, temp, infoSettings.max_temp[index]);
-      SET_BIT_ON(heat_send_waiting, index);
-
-      if (inRange(heater.T[index].current, heater.T[index].target, TEMPERATURE_RANGE))
-        heater.T[index].status = SETTLED;
-      else
-        heater.T[index].status = heater.T[index].target > heater.T[index].current ? HEATING : COOLING;
-      break;
-
-    case FROM_CMD:
-      if (GET_BIT(heat_feedback_waiting, index) == false)
-      {
-        heater.T[index].target = temp;
-        SET_BIT_ON(heat_feedback_waiting, index);
-      }
-      break;
+    heater.T[index].status = HEATING;
+  }
+  if (heater.T[index].target < heater.T[index].current + 2)
+  {
+    heater.T[index].status = COOLING;
+  }
+  if (inRange(heater.T[index].current, heater.T[index].target, 2) == true)
+  {
+    heater.T[index].status = SETTLED;
   }
 }
 
+//Sync target temperature
+void heatSyncTargetTemp(uint8_t index, int16_t temp)
+{
+  index = fixHeaterIndex(index);
+  lastTarget[index] = heater.T[index].target = temp;
+}
+
+//Get target temperature
 uint16_t heatGetTargetTemp(uint8_t index)
 {
-  index = heaterIndexFix(index);
-
-  if (index == INVALID_HEATER)
-    return 0;
-
+  index = fixHeaterIndex(index);
   return heater.T[index].target;
 }
 
-void heatSetCurrentTemp(uint8_t index, const int16_t temp)
+// Set current temperature
+void heatSetCurrentTemp(uint8_t index, int16_t temp)
 {
-  index = heaterIndexFix(index);
-
-  if (index == INVALID_HEATER)
-    return;
-
+  index = fixHeaterIndex(index);
   heater.T[index].current = NOBEYOND(-99, temp, 999);
 
   if (infoMachineSettings.autoReportTemp)
-    heatSetNextUpdateTime();  // set next timeout for temperature auto-report
+    updateNextHeatCheckTime();  // set next timeout for temperature auto-report
 }
 
+// Get current temperature
 int16_t heatGetCurrentTemp(uint8_t index)
 {
-  index = heaterIndexFix(index);
-
-  if (index == INVALID_HEATER)
-    return 0;
-
+  index = fixHeaterIndex(index);
   return heater.T[index].current;
 }
 
+// Disable all heater/hotends
 void heatCoolDown(void)
 {
   for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
   {
-    heatSetTargetTemp(i, 0, FROM_GUI);
+    heatSetTargetTemp(i, 0);
   }
 }
 
-bool heatGetIsWaiting(const uint8_t index)
+// Is heating waiting to heat up
+bool heatGetIsWaiting(uint8_t index)
 {
-  return (heater.T[index].waiting == true);
+  return (heater.T[index].waiting != WAIT_NONE);
 }
 
+// Check all heater if there is a heater waiting to be waited
 bool heatHasWaiting(void)
 {
   for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
   {
-    if (heater.T[i].waiting == true)
+    if (heater.T[i].waiting != WAIT_NONE)
       return true;
   }
-
   return false;
 }
 
-void heatSetIsWaiting(uint8_t index, const bool isWaiting)
+// Set heater waiting status
+void heatSetIsWaiting(uint8_t tool, HEATER_WAIT isWaiting)
 {
-  index = heaterIndexFix(index);
+  heater.T[tool].waiting = isWaiting;
 
-  if (index == INVALID_HEATER)
-    return;
-
-  heater.T[index].waiting = isWaiting;
-
-  if (isWaiting == true)  // wait heating now, query more frequently
+  if (isWaiting != WAIT_NONE)  // wait heating now, query more frequently
+  {
     heatSetUpdateSeconds(TEMPERATURE_QUERY_FAST_SECONDS);
+  }
   else if (heatHasWaiting() == false)
+  {
     heatSetUpdateSeconds(TEMPERATURE_QUERY_SLOW_SECONDS);
+  }
 }
 
 void heatClearIsWaiting(void)
 {
   for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
   {
-    heater.T[i].waiting = false;
+    heater.T[i].waiting = WAIT_NONE;
   }
-
   heatSetUpdateSeconds(TEMPERATURE_QUERY_SLOW_SECONDS);
 }
 
-bool heatSetTool(const uint8_t toolIndex)
+// Set current Tool (Extruder)
+void heatSetCurrentTool(uint8_t tool)
 {
-  if (storeCmd("%s\n", toolChange[toolIndex]))
-  {
-    heater.toolIndex = toolIndex;
-    return true;
-  }
-
-  return false;
+  if (tool >= infoSettings.ext_count)
+    return;
+  heater.toolIndex = tool;
 }
 
-void heatSetToolIndex(const uint8_t toolIndex)
-{
-  heater.toolIndex = toolIndex;
-}
-
-uint8_t heatGetToolIndex(void)
+// Get current Tool (Extruder)
+uint8_t heatGetCurrentTool(void)
 {
   return heater.toolIndex;
 }
 
+// Get current hotend index in arry T[]
 uint8_t heatGetCurrentHotend(void)
 {
   return (infoSettings.hotend_count == 1) ? NOZZLE0 : heater.toolIndex;
 }
 
-bool heaterDisplayIsValid(const uint8_t index)
+// Check whether the index is a valid heater index.
+bool heaterIsValid(uint8_t index)
 {
   if (index >= infoSettings.hotend_count && index < MAX_HOTEND_COUNT)
     return false;
-
   if (!infoSettings.bed_en && index == BED)
     return false;
-
   if (!infoSettings.chamber_en && index == CHAMBER)
     return false;
-
   return true;
 }
 
-void heatSetUpdateSeconds(const uint8_t seconds)
+// Set temperature update time interval
+void heatSetUpdateSeconds(uint8_t seconds)
 {
-  if (heat_update_seconds == seconds)
-    return;
+  if (heat_update_seconds == seconds) return;
 
   heat_update_seconds = seconds;
-
   if (infoMachineSettings.autoReportTemp && !heat_update_waiting)
-    heat_update_waiting = storeCmd("M155 S%u\n", heat_update_seconds);
+  {
+    heat_update_waiting = storeCmd("M155 ");
+  }
 }
 
+// Get query temperature seconds
 uint8_t heatGetUpdateSeconds(void)
 {
   return heat_update_seconds;
 }
 
-void heatSyncUpdateSeconds(const uint8_t seconds)
+// Set query temperature seconds
+void heatSyncUpdateSeconds(uint8_t seconds)
 {
   heat_update_seconds = seconds;
 }
 
-void heatSetNextUpdateTime(void)
+// Set whether we need to query the current temperature
+void heatSetUpdateWaiting(bool isWaiting)
 {
-  heat_next_update_time = OS_GetTimeMs() + SEC_TO_MS(heat_update_seconds);
-
-  if (infoMachineSettings.autoReportTemp)
-    heat_next_update_time += AUTOREPORT_TIMEOUT;
+  heat_update_waiting = isWaiting;
 }
 
-void heatClearUpdateWaiting(void)
+// Set whether the heating command has been sent
+void heatSetSendWaiting(uint8_t index, bool isWaiting)
 {
-  heat_update_waiting = false;
-  heatSetNextUpdateTime();
+  heat_send_waiting[index] = isWaiting;
+}
+
+// Get whether has heating command in Queue
+bool heatGetSendWaiting(uint8_t index)
+{
+  return heat_send_waiting[index];
+}
+
+void updateNextHeatCheckTime(void)
+{
+  nextHeatCheckTime = OS_GetTimeMs() + heat_update_seconds * 1000;
 }
 
 void loopCheckHeater(void)
 {
-  do
-  { // periodically send M105 to query the temperatures, if motherboard does not supports M155 (AUTO_REPORT_TEMPERATURES)
-    // feature to automatically report the temperatures or (if M155 is supported) check temperature auto-report timeout
-    // and resend M155 command in case of timeout expired
-
-    // if next check time not yet elapsed or pending command (to avoid collision in gcode response processing), do nothing
-    if (OS_GetTimeMs() < heat_next_update_time || requestCommandInfoIsRunning())
-      break;
-
-    // if M105/M155 previously sent and still waiting for a reply and not timed out, extend next check time
-    if (heat_update_waiting && (OS_GetTimeMs() - heat_next_update_time < ACK_QUERY_TIMEOUT))
-    {
-      heatSetNextUpdateTime();
-      break;
-    }
-
-    if ((heat_update_waiting = !infoMachineSettings.autoReportTemp ? storeCmd("M105\n") : storeCmd("M155 S%u\n", heat_update_seconds)))
-      heatSetNextUpdateTime();
-  } while (0);
-
-  for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
+  // Send M105 to query the temperatures, if motherboard does not supports M155 (AUTO_REPORT_TEMPERATURES) feature
+  // to automatically report the temperatures.
+  if (!infoMachineSettings.autoReportTemp)
   {
-    if (heater.T[i].waiting && inRange(heater.T[i].current, heater.T[i].target, TEMPERATURE_RANGE))
-      heater.T[i].waiting = false;
-
-    if (heater.T[i].status != SETTLED && inRange(heater.T[i].current, heater.T[i].target, TEMPERATURE_RANGE))
+    do
     {
-      switch (heater.T[i].status)
+      // Send M105 query temperature continuously
+      if (heat_update_waiting == true)
       {
-        case HEATING:
-          BUZZER_PLAY(SOUND_HEATED);
-          break;
-
-        case COOLING:
-          BUZZER_PLAY(SOUND_COOLED);
-          break;
-
-        default:
-          break;
+        updateNextHeatCheckTime();
+        break;
       }
-
-      heater.T[i].status = SETTLED;
-    }
-
-    if (GET_BIT(heat_send_waiting, i) && !GET_BIT(heat_feedback_waiting, i))
+      if (OS_GetTimeMs() < nextHeatCheckTime)
+        break;
+      if (requestCommandInfoIsRunning())  // To avoid colision in Gcode response processing
+        break;
+      if (storeCmd("M105\n") == false)
+        break;
+      updateNextHeatCheckTime();
+      heat_update_waiting = true;
+    } while (0);
+  }
+  else  // check temperature auto-report timout and resend M155 command
+  {
+    if (OS_GetTimeMs() > AUTOREPORT_TIMEOUT && !heat_update_waiting)
     {
-      if (storeCmd("%s S%u\n", heatCmd[i], heatGetTargetTemp(i)))
-      {
-        SET_BIT_OFF(heat_send_waiting, i);
-        SET_BIT_ON(heat_feedback_waiting, i);
-      }
+      heat_update_waiting = storeCmd("M155 ");
+      if (heat_update_waiting) updateNextHeatCheckTime();  // set next timeout for temperature auto-report
     }
   }
 
-  if (MENU_IS_NOT(menuHeat) && !heatHasWaiting())
+  // Query the heater that needs to wait for the temperature to rise, whether it reaches the set temperature
+  for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)
+  {
+    if (heater.T[i].waiting == WAIT_NONE)
+    {
+      continue;
+    }
+    else if (heater.T[i].waiting == WAIT_HEATING)
+    {
+      if (heater.T[i].current + 2 <= heater.T[i].target)
+        continue;
+    }
+    else if (heater.T[i].waiting == WAIT_COOLING_HEATING)
+    {
+      if (inRange(heater.T[i].current, heater.T[i].target, 2) != true)
+        continue;
+    }
+
+    heater.T[i].waiting = WAIT_NONE;
+    if (heatHasWaiting())
+      continue;
+
+    if (infoMenu.menu[infoMenu.cur] == menuHeat)
+      break;
     heatSetUpdateSeconds(TEMPERATURE_QUERY_SLOW_SECONDS);
+  }
+
+  // Query heaters if they reached the target temperature (only if not prining)
+  for (uint8_t i = 0; (i < MAX_HEATER_COUNT) && (!isPrinting()); i++)
+  {
+    if (heater.T[i].status == SETTLED)
+    {
+      continue;
+    }
+    if (inRange(heater.T[i].current, heater.T[i].target, 2) != true)
+    {
+      continue;
+    }
+
+    switch (heater.T[i].status)
+    {
+      case HEATING:
+        BUZZER_PLAY(sound_heated);
+        break;
+
+      case COOLING:
+        BUZZER_PLAY(sound_cooled);
+        break;
+
+      default:
+        break;
+    }
+    heater.T[i].status = SETTLED;
+  }
+
+  for (uint8_t i = 0; i < MAX_HEATER_COUNT; i++)  // If the target temperature changes, send a Gcode to set the motherboard
+  {
+    if (lastTarget[i] != heater.T[i].target)
+    {
+      lastTarget[i] = heater.T[i].target;
+      if (heat_send_waiting[i] != true)
+      {
+        heat_send_waiting[i] = storeCmd("%s ", heatCmd[i]);
+      }
+    }
+  }
 }

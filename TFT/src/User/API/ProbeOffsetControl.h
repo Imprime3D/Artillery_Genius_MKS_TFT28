@@ -9,7 +9,7 @@ extern "C" {
 #include <stdint.h>
 
 // Enable probe offset
-void probeOffsetEnable(float shim);
+void probeOffsetEnable(bool skipZOffset, float shim);
 
 // Disable probe offset
 void probeOffsetDisable(void);
@@ -26,8 +26,14 @@ float probeOffsetGetValue(void);
 // Reset Z offset value to default value
 float probeOffsetResetValue(void);
 
-// Update Z offset value
-float probeOffsetUpdateValue(float unit);
+// Decrease Z offset value
+float probeOffsetDecreaseValue(float unit);
+
+// Increase Z offset value
+float probeOffsetIncreaseValue(float unit);
+
+// Update Z offset value by encoder
+float probeOffsetUpdateValueByEncoder(float unit, int8_t direction);
 
 #ifdef __cplusplus
 }

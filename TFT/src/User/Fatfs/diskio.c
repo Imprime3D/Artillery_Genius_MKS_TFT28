@@ -7,22 +7,18 @@
 /* storage control modules to the FatFs module with a defined API.       */
 /*-----------------------------------------------------------------------*/
 
-#include "ff.h"        // Obtains integer types
-#include "variants.h"  // for SD_SPI_SUPPORT etc...
-#include "diskio.h"    // Declarations of disk functions
+#include "ff.h"      // Obtains integer types
+#include "diskio.h"  // Declarations of disk functions
 #include "usb_conf.h"
 #include "usbh_msc_core.h"
 #include "usbh_usr.h"
+#include "variants.h"
 
 #ifdef SD_SPI_SUPPORT
   #include "sd.h"
 #else
   #include "sdio_sdcard.h"
 #endif
-
-#include <stdbool.h>
-
-#define MAX_RETRY_ATTEMPTS_COUNT 100  // used by handleDiskError function
 
 // Definitions of physical drive number for each drive
 #define DEV_MMC 0  // MMC/SD card to physical drive 0
@@ -67,7 +63,7 @@ DSTATUS disk_initialize(
       break;
 
     case DEV_USB:
-      if (USB_IsDeviceConnected())
+      if (HCD_IsDeviceConnected(&USB_OTG_Core))
       {
         diskStatus[pdrv] &= ~STA_NOINIT;
       }
@@ -78,29 +74,6 @@ DSTATUS disk_initialize(
   }
 
   return diskStatus[pdrv];
-}
-
-bool handleDiskError(BYTE pdrv, uint8_t * errorNum)
-{
-  // PUT HERE ANY SPECIFIC ERROR HANDLING PROCEDURE
-  //
-  // current error handling procedure based on device re-initialization
-  // for a maximum number of retry attempts
-
-  // return "false" to force an abort or "true" to force a retry
-  if (++(*errorNum) <= MAX_RETRY_ATTEMPTS_COUNT)
-  {
-    if (pdrv == DEV_MMC)
-      SD_Init();
-//    else  // if DEV_USB, the following code is already invoked by USBH_UDISK_Read / _Write so you can leave it commented out
-//      HCD_IsDeviceConnected(&USB_OTG_Core);
-
-    return true;
-  }
-  else
-  {
-    return false;
-  }
 }
 
 /*-----------------------------------------------------------------------*/
@@ -117,28 +90,23 @@ DRESULT disk_read(
   if (!count) return RES_PARERR;
   if (diskStatus[pdrv] & STA_NOINIT) return RES_NOTRDY;
 
-  uint8_t errorNum = 0;
-
-  do
+  switch (pdrv)
   {
-    switch (pdrv)
-    {
-      case DEV_MMC:
-        if (SD_ReadDisk(buff, sector, count) == 0)  // no read error
-          return RES_OK;
-        break;
+    case DEV_MMC:
+      while (SD_ReadDisk(buff, sector, count))  // read error
+      {
+        SD_Init();  //init again
+      }
+      return RES_OK;
 
-      case DEV_USB:
-        if (USBH_UDISK_Read(buff, sector, count) == 0)  // no read error
-          return RES_OK;
-        break;
+    case DEV_USB:
+      if (USBH_UDISK_Read(buff, sector, count) == 0)
+        return RES_OK;
+      else
+        return RES_ERROR;
+  }
 
-      default:
-        return RES_PARERR;
-    }
-  } while (handleDiskError(pdrv, &errorNum));  // read error, retry or exit with error
-
-  return RES_ERROR;
+  return RES_PARERR;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -158,28 +126,23 @@ DRESULT disk_write(
   if (diskStatus[pdrv] & STA_NOINIT) return RES_NOTRDY;
   if (diskStatus[pdrv] & STA_PROTECT) return RES_WRPRT;
 
-  uint8_t errorNum = 0;
-
-  do
+  switch (pdrv)
   {
-    switch (pdrv)
-    {
-      case DEV_MMC:
-        if (SD_WriteDisk((uint8_t*)buff, sector, count) == 0)  // no write error
-          return RES_OK;
-        break;
+    case DEV_MMC:
+      while (SD_WriteDisk((u8*)buff, sector, count))  // write error
+      {
+        SD_Init();  // init again
+      }
+      return RES_OK;
 
-      case DEV_USB:
-        if (USBH_UDISK_Write((uint8_t*)buff, sector, count) == 0)  // no write error
-          return RES_OK;
-        break;
+    case DEV_USB:
+      if (USBH_UDISK_Write((u8*)buff, sector, count) == 0)
+        return RES_OK;
+      else
+        return RES_ERROR;
+  }
 
-      default:
-        return RES_PARERR;
-    }
-  } while (handleDiskError(pdrv, &errorNum));  // write error, retry or exit with error
-
-  return RES_ERROR;
+  return RES_PARERR;
 }
 
 #endif
@@ -200,34 +163,33 @@ DRESULT disk_ioctl(
       return RES_OK;
 
     case DEV_USB:
-      return RES_OK;
-    // {
-    //   DRESULT res = RES_ERROR;
-    //   switch (cmd)
-    //   {
-    //     case CTRL_SYNC:         // Make sure that no pending write process
-    //       res = RES_OK;
-    //       break;
+    {
+      DRESULT res = RES_ERROR;
+      switch (cmd)
+      {
+        case CTRL_SYNC:         // Make sure that no pending write process
+          res = RES_OK;
+          break;
 
-    //     case GET_SECTOR_COUNT:  // Get number of sectors on the disk (DWORD)
-    //       *(DWORD*)buff = (DWORD) USBH_MSC_Param.MSCapacity;
-    //       res = RES_OK;
-    //       break;
+        case GET_SECTOR_COUNT:  // Get number of sectors on the disk (DWORD)
+          *(DWORD*)buff = (DWORD) USBH_MSC_Param.MSCapacity;
+          res = RES_OK;
+          break;
 
-    //     case GET_SECTOR_SIZE:   // Get R/W sector size (WORD)
-    //       *(WORD*)buff = 512;
-    //       res = RES_OK;
-    //       break;
+        case GET_SECTOR_SIZE:   // Get R/W sector size (WORD)
+          *(WORD*)buff = 512;
+          res = RES_OK;
+          break;
 
-    //     case GET_BLOCK_SIZE:    // Get erase block size in unit of sector (DWORD)
-    //       *(DWORD*)buff = 512;
-    //       break;
+        case GET_BLOCK_SIZE:    // Get erase block size in unit of sector (DWORD)
+          *(DWORD*)buff = 512;
+          break;
 
-    //     default:
-    //       res = RES_PARERR;
-    //   }
-    //   return res;
-    // }
+        default:
+          res = RES_PARERR;
+      }
+      return res;
+    }
   }
 
   return RES_PARERR;

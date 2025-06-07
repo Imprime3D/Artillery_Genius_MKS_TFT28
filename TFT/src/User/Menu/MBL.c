@@ -9,32 +9,28 @@ bool mblRunning = false;
 static inline void mblStart(void)
 {
   mblRunning = true;
+  mblPoint = 0;
 
-  probeHeightEnable();  // temporary disable software endstops and save ABL state
+  probeHeightEnable();  // temporary disable software endstops
 
   // MBL gcode sequence start
   mustStoreCmd("G28\n");
-  mustStoreCmd("G29 S1\n");  // home and move to first point for Z height adjustment
-
-  #ifdef MBL_START_Z
-    probeHeightStart(infoSettings.level_z_pos, false);  // raise nozzle
-  #endif
-
-  probeHeightRelative();  // set relative position mode
+  mustStoreCmd("G29 S1\n");                           // home and move to first point for Z height adjustment
+  probeHeightStart(infoSettings.level_z_pos, false);  // raise nozzle
+  probeHeightRelative();                              // set relative position mode
 }
 
 // Stop MBL
 static inline void mblStop(void)
 {
   mblRunning = false;
-  mblPoint = 0;
 
   if (infoMachineSettings.zProbe == ENABLED)
     probeHeightStop(infoSettings.level_z_raise);  // raise nozzle
 
   probeHeightAbsolute();  // set absolute position mode
 
-  probeHeightDisable();  // restore original software endstops state and ABL state
+  probeHeightDisable();  // restore original software endstops state
 }
 
 // Abort MBL
@@ -45,7 +41,7 @@ static inline void mblAbort(void)
 
   mblStop();
 
-  BUZZER_PLAY(SOUND_ERROR);
+  BUZZER_PLAY(sound_error);
 
   popupReminder(DIALOG_TYPE_ERROR, LABEL_MBL_SETTINGS, LABEL_PROCESS_ABORTED);
 }
@@ -57,15 +53,16 @@ void mblUpdateStatus(bool succeeded)
 
   if (succeeded)  // if bed leveling process successfully terminated, allow to save to EEPROM
   {
-    BUZZER_PLAY(SOUND_SUCCESS);
+    BUZZER_PLAY(sound_success);
 
     LABELCHAR(tempMsg, LABEL_BL_COMPLETE);
 
     if (infoMachineSettings.EEPROM == 1)
     {
-      sprintf(strchr(tempMsg, '\0'), "\n %s", textSelect(LABEL_EEPROM_SAVE_INFO));
+      sprintf(&tempMsg[strlen(tempMsg)], "\n %s", textSelect(LABEL_EEPROM_SAVE_INFO));
 
-      popupDialog(DIALOG_TYPE_SUCCESS, LABEL_MBL_SETTINGS, (uint8_t *) tempMsg, LABEL_CONFIRM, LABEL_CANCEL, saveEepromSettings, NULL, NULL);
+      setDialogText(LABEL_MBL_SETTINGS, (uint8_t *) tempMsg, LABEL_CONFIRM, LABEL_CANCEL);
+      showDialog(DIALOG_TYPE_SUCCESS, saveEepromSettings, NULL, NULL);
     }
     else
     {
@@ -74,7 +71,7 @@ void mblUpdateStatus(bool succeeded)
   }
   else  // if bed leveling process failed, provide an error dialog
   {
-    BUZZER_PLAY(SOUND_ERROR);
+    BUZZER_PLAY(sound_error);
 
     popupReminder(DIALOG_TYPE_ERROR, LABEL_MBL_SETTINGS, LABEL_PROCESS_ABORTED);
   }
@@ -85,42 +82,44 @@ void mblNotifyError(bool isStarted)
 {
   LABELCHAR(tempMsg, LABEL_MBL);
 
-  sprintf(strchr(tempMsg, '\0'), " %s", isStarted ? textSelect(LABEL_ON) : textSelect(LABEL_OFF));
+  if (!isStarted)
+    sprintf(&tempMsg[strlen(tempMsg)], " %s", textSelect(LABEL_OFF));
+  else
+    sprintf(&tempMsg[strlen(tempMsg)], " %s", textSelect(LABEL_ON));
 
   addToast(DIALOG_TYPE_ERROR, tempMsg);
 }
 
-void mblDraw(COORDINATE *val)
+void mblDrawHeader(uint8_t *point)
 {
-  char tempstr[24], tempstr2[24], tempstr3[24];
+  char tempstr[20];
 
-  if (mblPoint == 0)
+  if (point != NULL)
   {
-    sprintf(tempstr, "%-15s", textSelect(LABEL_OFF));
-    sprintf(tempstr2, "%s", "");  // temp string
-
-    GUI_SetColor(infoSettings.reminder_color);
+    sprintf(tempstr, "P:%-4d", *point);
+    GUI_SetColor(infoSettings.sd_reminder_color);
   }
   else
   {
-    sprintf(tempstr, "P:%-4d", mblPoint);
-    sprintf(tempstr2, "X:%.3f Y:%.3f", val->axis[X_AXIS], val->axis[Y_AXIS]);  // temp string
-
-    GUI_SetColor(infoSettings.status_color);
+    sprintf(tempstr, "%-15s", textSelect(LABEL_OFF));
+    GUI_SetColor(infoSettings.reminder_color);
   }
 
-  sprintf(tempstr3, "%-19s", tempstr2);              // X, Y
-  sprintf(tempstr2, "  %.3f  ", val->axis[Z_AXIS]);  // Z
-
   GUI_DispString(exhibitRect.x0, exhibitRect.y0, (uint8_t *) tempstr);
-  GUI_SetColor(infoSettings.status_color);
-  GUI_DispString(exhibitRect.x0, exhibitRect.y1 - BYTE_HEIGHT, (uint8_t *) tempstr3);
-
   GUI_SetColor(infoSettings.font_color);
-  setFontSize(FONT_SIZE_LARGE);
+  setLargeFont(true);
   GUI_DispStringCenter((exhibitRect.x0 + exhibitRect.x1) >> 1, exhibitRect.y0, (uint8_t *) "mm");
-  GUI_DispStringInPrect(&exhibitRect, (uint8_t *) tempstr2);
-  setFontSize(FONT_SIZE_NORMAL);
+  setLargeFont(false);
+}
+
+void mblDrawValue(float val)
+{
+  char tempstr[20];
+
+  sprintf(tempstr, "  %.2f  ", val);
+  setLargeFont(true);
+  GUI_DispStringInPrect(&exhibitRect, (uint8_t *) tempstr);
+  setLargeFont(false);
 }
 
 void menuMBL(void)
@@ -136,8 +135,8 @@ void menuMBL(void)
       #else
         {ICON_DEC,                     LABEL_DEC},
       #endif
-      {ICON_NULL,                    LABEL_NULL},
-      {ICON_NULL,                    LABEL_NULL},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
       #ifdef FRIENDLY_Z_OFFSET_LANGUAGE
         {ICON_NOZZLE_UP,               LABEL_UP},
       #else
@@ -151,12 +150,11 @@ void menuMBL(void)
   };
 
   KEY_VALUES key_num = KEY_IDLE;
-  COORDINATE now, curValue;
+  float now, curValue;
   float unit;
 
-  coordinateGetAllActual(&now);
+  now = curValue = coordinateGetAxisActual(Z_AXIS);
 
-  INVERT_Z_AXIS_ICONS(&mblItems);
   mblItems.items[KEY_ICON_4] = itemMoveLen[curUnit_index];
 
   if (mblRunning)
@@ -166,39 +164,43 @@ void menuMBL(void)
   }
 
   menuDrawPage(&mblItems);
-  mblDraw(&now);
+  mblDrawHeader(!mblRunning ? NULL : &mblPoint);
+  mblDrawValue(now);
 
-  while (MENU_IS(menuMBL))
+  #if LCD_ENCODER_SUPPORT
+    encoderPosition = 0;
+  #endif
+
+  while (infoMenu.menu[infoMenu.cur] == menuMBL)
   {
     unit = moveLenSteps[curUnit_index];
-    coordinateGetAllActual(&curValue);
-    key_num = menuKeyGetValue();
 
+    curValue = coordinateGetAxisActual(Z_AXIS);
+
+    key_num = menuKeyGetValue();
     switch (key_num)
     {
       // decrease Z height
       case KEY_ICON_0:
-      case KEY_DECREASE:
         if (!mblRunning)
           mblNotifyError(false);
         else
-          probeHeightMove(-unit);
+          probeHeightMove(unit, -1);
         break;
 
       case KEY_INFOBOX:
         if (mblRunning)
           mblNotifyError(true);
         else
-          OPEN_MENU(menuUnifiedHeat);
+          infoMenu.menu[++infoMenu.cur] = menuUnifiedHeat;
         break;
 
       // increase Z height
       case KEY_ICON_3:
-      case KEY_INCREASE:
         if (!mblRunning)
           mblNotifyError(false);
         else
-          probeHeightMove(unit);
+          probeHeightMove(unit, 1);
         break;
 
       // change unit
@@ -215,7 +217,7 @@ void menuMBL(void)
         if (!mblRunning)
           mblNotifyError(false);
         else
-          probeHeightMove(-curValue.axis[Z_AXIS]);
+          probeHeightMove(curValue, -1);
         break;
 
       // start MBL or move to next mesh point
@@ -230,16 +232,16 @@ void menuMBL(void)
           menuDrawItem(&mblItems.items[key_num], key_num);
 
           ++mblPoint;
+          mblDrawHeader(&mblPoint);
         }
         else
         {
           storeCmd("G29 S2\n");  // save Z height and move to next mesh point
 
-          #ifdef MBL_START_Z
-            probeHeightStart(infoSettings.level_z_pos, false);  // raise nozzle
-          #endif
+          probeHeightStart(infoSettings.level_z_pos, false);  // raise nozzle
 
           ++mblPoint;
+          mblDrawHeader(&mblPoint);
         }
         break;
 
@@ -247,17 +249,28 @@ void menuMBL(void)
         if (mblRunning)
           mblAbort();
 
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:
+        #if LCD_ENCODER_SUPPORT
+          if (encoderPosition)
+          {
+            if (!mblRunning)
+              mblNotifyError(false);
+            else
+              probeHeightMove(unit, encoderPosition > 0 ? 1 : -1);
+
+            encoderPosition = 0;
+          }
+        #endif
         break;
     }
 
-    if (memcmp(&now, &curValue, sizeof(COORDINATE)))
+    if (now != curValue)
     {
-      coordinateGetAllActual(&now);
-      mblDraw(&now);
+      now = curValue;
+      mblDrawValue(now);
     }
 
     probeHeightQueryCoord();

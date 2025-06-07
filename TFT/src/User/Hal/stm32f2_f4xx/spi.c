@@ -1,5 +1,4 @@
 #include "spi.h"
-#include "variants.h"  // for SPI1_SCK_PIN etc...
 #include "GPIO_Init.h"
 
 // SPI1 default pins config
@@ -119,8 +118,8 @@ void SPI_DeConfig(uint8_t port)
 
 uint16_t SPI_Read_Write(uint8_t port, uint16_t d)
 {
-  while ((spi[port]->SR & (1 << 1)) == RESET);  // wait for tx empty
+  while((spi[port]->SR & (1 << 1)) == RESET);  // wait for tx empty
   spi[port]->DR = d;
-  while ((spi[port]->SR & (1 << 0)) == RESET);  // wait for rx no empty
+  while((spi[port]->SR & (1 << 0)) == RESET);  // wait for rx no empty
   return spi[port]->DR;
 }

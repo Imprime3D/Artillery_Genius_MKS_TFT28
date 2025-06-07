@@ -1,13 +1,6 @@
 #include "UnifiedMove.h"
 #include "includes.h"
 
-#if DELTA_PROBE_TYPE != 0  // if Delta printer
-  void deltaCalibration(void)
-  {
-    mustStoreCmd("G33\n");
-  }
-#endif
-
 void menuUnifiedMove(void)
 {
   MENUITEMS UnifiedMoveItems = {
@@ -20,12 +13,8 @@ void menuUnifiedMove(void)
       {ICON_EXTRUDE,                 LABEL_EXTRUDE},
       {ICON_DISABLE_STEPPERS,        LABEL_DISABLE_STEPPERS},
       {ICON_BABYSTEP,                LABEL_BABYSTEP},
-      #if DELTA_PROBE_TYPE == 0  // if not Delta printer
-        {ICON_MANUAL_LEVEL,            LABEL_LEVELING},
-      #else
-        {ICON_DELTA_CALIBRATE,         LABEL_CALIBRATION},
-      #endif
-      {ICON_NULL,                    LABEL_NULL},
+      {ICON_MANUAL_LEVEL,            LABEL_LEVELING},
+      {ICON_BACKGROUND,              LABEL_BACKGROUND},
       {ICON_BACK,                    LABEL_BACK},
     }
   };
@@ -40,21 +29,21 @@ void menuUnifiedMove(void)
 
   menuDrawPage(&UnifiedMoveItems);
 
-  while (MENU_IS(menuUnifiedMove))
+  while (infoMenu.menu[infoMenu.cur] == menuUnifiedMove)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
     {
       case KEY_ICON_0:
-        OPEN_MENU(menuHome);
+        infoMenu.menu[++infoMenu.cur] = menuHome;
         break;
 
       case KEY_ICON_1:
-        OPEN_MENU(menuMove);
+        infoMenu.menu[++infoMenu.cur] = menuMove;
         break;
 
       case KEY_ICON_2:
-        OPEN_MENU(menuExtrude);
+        infoMenu.menu[++infoMenu.cur] = menuExtrude;
         break;
 
       case KEY_ICON_3:
@@ -62,33 +51,20 @@ void menuUnifiedMove(void)
         break;
 
       case KEY_ICON_4:
-        OPEN_MENU(menuBabystep);
+        infoMenu.menu[++infoMenu.cur] = menuBabystep;
         break;
 
       case KEY_ICON_5:
-        #if DELTA_PROBE_TYPE == 0  // if not Delta printer
-          OPEN_MENU(menuManualLeveling);
-        #else
-          #if DELTA_PROBE_TYPE != 2  // if not removable probe
-            deltaCalibration();
-          #else  // if removable probe
-            popupDialog(DIALOG_TYPE_ALERT, LABEL_WARNING, LABEL_CONNECT_PROBE, LABEL_CONTINUE, LABEL_CANCEL, deltaCalibration, NULL, NULL);
-          #endif
-        #endif
+        infoMenu.menu[++infoMenu.cur] = menuManualLeveling;
         break;
 
       case KEY_ICON_6:
         if (infoMachineSettings.leveling != BL_DISABLED)
-        {
-          if (infoMachineSettings.firmwareType == FW_MARLIN)
-            storeCmd("M420\n");  // refresh ABL_STATE
-
-          OPEN_MENU(menuBedLeveling);
-        }
+          infoMenu.menu[++infoMenu.cur] = menuBedLeveling;
         break;
 
       case KEY_ICON_7:
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:

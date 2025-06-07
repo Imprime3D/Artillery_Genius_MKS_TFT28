@@ -41,7 +41,7 @@ __ALIGN_BEGIN USB_OTG_CORE_HANDLE USB_OTG_Core __ALIGN_END;
 __ALIGN_BEGIN USBH_HOST USB_Host __ALIGN_END;
 
 
-#ifdef USB_FLASH_DRIVE_SUPPORT
+#ifdef U_DISK_SUPPORT
 
 uint8_t u_disk_inserted = 0;
 
@@ -197,7 +197,8 @@ void USBH_USR_DeviceSpeedDetected(uint8_t DeviceSpeed)
 */
 void USBH_USR_Device_DescAvailable(void *DeviceDesc)
 {
-  USBH_DevDesc_TypeDef *hs = DeviceDesc;
+  USBH_DevDesc_TypeDef *hs;
+  hs = DeviceDesc;
   hs = hs;    //just for ignore warning
   LOG_printf("VID : %04luh\n", (uint32_t) (*hs).idVendor);
   LOG_printf("PID : %04luh\n", (uint32_t) (*hs).idProduct);
@@ -362,21 +363,6 @@ void USBH_USR_DeInit(void)
   USBH_USR_ApplicationState = USH_USR_FS_INIT;
 }
 
-void USB_Init(void)
-{
-  USBH_Init(&USB_OTG_Core, USB_OTG_FS_CORE_ID, &USB_Host, &USBH_MSC_cb, &USR_cb);
-}
-
-void USB_LoopProcess(void)
-{
-  USBH_Process(&USB_OTG_Core, &USB_Host);
-}
-
-uint8_t USB_IsDeviceConnected(void)
-{
-  return HCD_IsDeviceConnected(&USB_OTG_Core);
-}
-
 uint8_t USBH_USR_Inserted(void)
 {
   return u_disk_inserted;
@@ -448,17 +434,13 @@ uint8_t USBH_UDISK_Write(uint8_t* buf, uint32_t sector, uint32_t cnt)
 }
 #else
 
-void USB_Init(void)
+uint32_t HCD_IsDeviceConnected(USB_OTG_CORE_HANDLE *pdev)
 {
+  return 0;  //disconnected
 }
 
-void USB_LoopProcess(void)
+void USBH_Process(USB_OTG_CORE_HANDLE *pdev , USBH_HOST *phost)
 {
-}
-
-uint8_t USB_IsDeviceConnected(void)
-{
-  return 0;
 }
 
 uint8_t USBH_USR_Inserted(void)

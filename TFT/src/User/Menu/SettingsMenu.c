@@ -11,8 +11,8 @@ const MENUITEMS settingsItems = {
     {ICON_FEATURE_SETTINGS,        LABEL_FEATURE_SETTINGS},
     {ICON_SCREEN_INFO,             LABEL_SCREEN_INFO},
     {ICON_CONNECTION_SETTINGS,     LABEL_CONNECTION_SETTINGS},
-    {ICON_NULL,                    LABEL_NULL},
-    {ICON_NULL,                    LABEL_NULL},
+    {ICON_BACKGROUND,              LABEL_BACKGROUND},
+    {ICON_BACKGROUND,              LABEL_BACKGROUND},
     {ICON_BACK,                    LABEL_BACK},
   }
 };
@@ -25,35 +25,58 @@ const MENUITEMS settingsItems = {
 //   {1 * LCD_WIDTH / 3, 1 * BYTE_HEIGHT},
 //   {2 * LCD_WIDTH / 3, 1 * BYTE_HEIGHT},};
 
-static char firmware_name[64] = "Unknown system";  // Marlin firmware version
-char machine_type[64] = "3D Printer";              // Marlin machine type
-static char access_point[64] = "Connecting...";    // Access point for RepRapFirmware
-static char ip_address[20] = "0.0.0.0";            // IP address for RepRapFirmware
+static uint8_t firmare_name[64] = "Unknow system";  // Marlin firmware version
+uint8_t machine_type[64] = "3D Printer";  // Marlin machine type
+uint8_t access_point[64] = "Connecting...";  // Access point for RepRapFirmware
+uint8_t ip_address[20] = "0.0.0.0";  // IP address for RepRapFirmware
 
-void infoSetFirmwareName(char * name, uint8_t name_len)
+void infoSetFirmwareName(uint8_t *name, uint8_t name_len)
 {
-  name_len++;  // add space for terminal '\0' character
-  strncpy_no_pad(firmware_name, name, MIN(sizeof(firmware_name), name_len));
+  if (name_len > sizeof(firmare_name) - 1)
+    name_len = sizeof(firmare_name) - 1;
+  uint8_t i;
+  for (i = 0; i < name_len; i++)
+  {
+    firmare_name[i] = name[i];
+  }
+  firmare_name[i] = 0;
 }
 
-void infoSetMachineType(char * machine, uint8_t type_len)
+void infoSetMachineType(uint8_t *machine, uint8_t type_len)
 {
-  type_len++;  // add space for terminal '\0' character
-  strncpy_no_pad(machine_type, machine, MIN(sizeof(machine_type), type_len));
-
-  statusSetReady();
+  if (type_len > sizeof(machine_type) - 1)
+    type_len = sizeof(machine_type) - 1;
+  uint8_t i;
+  for (i = 0; i < type_len; i++)
+  {
+    machine_type[i] = machine[i];
+  }
+  machine_type[i] = 0;
+  statusScreen_setReady();
 }
 
-void infoSetAccessPoint(char * ssid, uint8_t ssid_len)
+void infoSetAccessPoint(uint8_t *ssid, uint8_t ssid_len)
 {
-  ssid_len++;  // add space for terminal '\0' character
-  strncpy_no_pad(access_point, ssid, MIN(sizeof(access_point), ssid_len));
+  if (ssid_len > sizeof(access_point) - 1)
+    ssid_len = sizeof(access_point) - 1;
+  uint8_t i;
+  for (i = 0; i < ssid_len; i++)
+  {
+    access_point[i] = ssid[i];
+  }
+  access_point[i] = 0;
 }
 
-void infoSetIPAddress(char * ip, uint8_t ip_len)
+void infoSetIPAddress(uint8_t *ip, uint8_t ip_len)
 {
-  ip_len++;  // add space for terminal '\0' character
-  strncpy_no_pad(ip_address, ip, MIN(sizeof(ip_address), ip_len));
+  if (ip_len > sizeof(ip_address) - 1)
+    ip_len = sizeof(ip_address) - 1;
+  uint8_t i;
+  for (i = 0; i < ip_len; i++)
+  {
+    ip_address[i] = ip[i];
+  }
+  ip_address[i] = 0;
 }
 
 // Version infomation
@@ -61,7 +84,8 @@ void menuInfo(void)
 {
   char buf[128];
 
-  const char *const hardware = HARDWARE_MANUFACTURER HARDWARE_VERSION;
+  const char *const hardware = "BIGTREETECH_" HARDWARE_VERSION;
+  const char *const firmware = HARDWARE_VERSION"." STRINGIFY(SOFTWARE_VERSION) " " __DATE__;
 
   GUI_Clear(infoSettings.bg_color);
   GUI_SetColor(GRAY);
@@ -86,6 +110,10 @@ void menuInfo(void)
 
   // GUI_HLine(0, clocks[5].y + BYTE_HEIGHT, LCD_WIDTH);
 
+  //spi flash info
+  float usedMB = (float)FLASH_USED/1048576;
+  sprintf(buf, "Used %.2f%% (%.2fMB/%uMB)", flashUsedPercentage(), usedMB, (W25Qxx_ReadCapacity()/1048576));
+
   const uint16_t top_y = 0; //(LCD_HEIGHT - (7 * BYTE_HEIGHT)) / 2;  // 8 firmware info lines + 1 SPI flash info line
   const uint16_t start_x = strlen("Firmware:") * BYTE_WIDTH;
   const GUI_RECT version[7] = {
@@ -96,9 +124,8 @@ void menuInfo(void)
     {start_x, top_y + 6*BYTE_HEIGHT, LCD_WIDTH, top_y + 7*BYTE_HEIGHT},
     {start_x, top_y + 7*BYTE_HEIGHT, LCD_WIDTH, top_y + 8*BYTE_HEIGHT},
     {start_x, top_y + 8*BYTE_HEIGHT, LCD_WIDTH, top_y + 9*BYTE_HEIGHT},
-  };
-
-  // draw titles
+    };
+  //draw titles
   GUI_DispString(0, version[0].y0, (uint8_t *)"System  :");
   GUI_DispString(0, version[1].y0, (uint8_t *)"Machine :");
   GUI_DispString(0, version[2].y0, (uint8_t *)"Board   :");
@@ -110,16 +137,12 @@ void menuInfo(void)
     GUI_DispString(0, version[6].y0, (uint8_t *)"IP      :");
   }
 
-  // draw info
+  //draw info
   GUI_SetColor(0xDB40);
-  GUI_DispStringInPrectEOL(&version[0], (uint8_t *)firmware_name);
-  GUI_DispStringInPrectEOL(&version[1], (uint8_t *)machine_type);
+  GUI_DispStringInPrectEOL(&version[0], firmare_name);
+  GUI_DispStringInPrectEOL(&version[1], machine_type);
   GUI_DispStringInPrectEOL(&version[2], (uint8_t *)hardware);
-  sprintf(buf, "V"STRINGIFY(SOFTWARE_VERSION) " " __DATE__ " in %dMhz", mcuClocks.rccClocks.SYSCLK_Frequency / 1000000);
-  GUI_DispStringInPrectEOL(&version[3], (uint8_t *)buf);
-  // spi flash info
-  float usedMB = (float)FLASH_USED/1048576;
-  sprintf(buf, "Used %.2f%% (%.2fMB/%uMB)", flashUsedPercentage(), usedMB, (W25Qxx_ReadCapacity() / 1048576));
+  GUI_DispStringInPrectEOL(&version[3], (uint8_t *)firmware);
   GUI_DispStringInPrectEOL(&version[4], (uint8_t *)buf);
   if (infoMachineSettings.firmwareType == FW_REPRAPFW)
   {
@@ -133,12 +156,11 @@ void menuInfo(void)
 
   GUI_DispStringInRect(20, LCD_HEIGHT - (BYTE_HEIGHT*2), LCD_WIDTH-20, LCD_HEIGHT, textSelect(LABEL_TOUCH_TO_EXIT));
 
-  while (!TS_IsPressed()) { loopBackEnd(); }
-  BUZZER_PLAY(SOUND_KEYPRESS);
-  while (TS_IsPressed()) { loopBackEnd(); }
+  while (!isPress()) loopBackEnd();
+  while (isPress()) loopBackEnd();
 
   GUI_RestoreColorDefault();
-  CLOSE_MENU();
+  infoMenu.cur--;
 }
 
 void menuSettings(void)
@@ -147,34 +169,34 @@ void menuSettings(void)
 
   menuDrawPage(&settingsItems);
 
-  while (MENU_IS(menuSettings))
+  while (infoMenu.menu[infoMenu.cur] == menuSettings)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
     {
       case KEY_ICON_0:
-        OPEN_MENU(menuScreenSettings);
+        infoMenu.menu[++infoMenu.cur] = menuScreenSettings;
         break;
 
       case KEY_ICON_1:
         mustStoreCmd("M503 S0\n");
-        OPEN_MENU(menuMachineSettings);
+        infoMenu.menu[++infoMenu.cur] = menuMachineSettings;
         break;
 
       case KEY_ICON_2:
-        OPEN_MENU(menuFeatureSettings);
+        infoMenu.menu[++infoMenu.cur] = menuFeatureSettings;
         break;
 
       case KEY_ICON_3:
-        OPEN_MENU(menuInfo);
+        infoMenu.menu[++infoMenu.cur] = menuInfo;
         break;
 
       case KEY_ICON_4:
-        OPEN_MENU(menuConnectionSettings);
+        infoMenu.menu[++infoMenu.cur] = menuConnectionSettings;
         break;
 
       case KEY_ICON_7:
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:

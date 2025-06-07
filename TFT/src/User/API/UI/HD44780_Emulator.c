@@ -35,7 +35,7 @@ void HD44780_BI10_DisplayClear(uint8_t cmd)
                     YSTART,
                     LCD_WIDTH,
                     LCD_HEIGHT,
-                    infoSettings.marlin_bg_color);
+                    infoSettings.marlin_mode_bg_color);
   HD44780.x = HD44780.y = 0;
   HD44780_reg.bi.ems.id = 1;
 }
@@ -47,31 +47,31 @@ void HD44780_BI11_ReturnHome(uint8_t cmd)
   HD44780.x = HD44780.y = 0;
 }
 
-// cmd : 1 << 2
+//cmd : 1 << 2
 void HD44780_BI12_EntryModeSet(uint8_t cmd)
 {
   HD44780_reg.bi.ems.reg = cmd;
 }
 
-// cmd : 1 << 3
+//cmd : 1 << 3
 void HD44780_BI13_DisplayControl(uint8_t cmd)
 {
   HD44780_reg.bi.dc.reg = cmd;
 }
 
-// cmd : 1 << 4
+//cmd : 1 << 4
 void HD44780_BI14_CursorDisplayControl(uint8_t cmd)
 {
   HD44780_reg.bi.cdsc.reg = cmd;
 }
 
-// cmd : 1 << 5
+//cmd : 1 << 5
 void HD44780_CI15_FunctionSet(uint8_t cmd)
 {
   HD44780_reg.fs.reg = cmd;
 }
 
-// cmd : 1 << 6
+//cmd : 1 << 6
 void HD44780_BI16_SetCGRAMAddress(uint8_t cmd)
 {
   HD44780_reg.bi.cgrama.reg = cmd;
@@ -82,7 +82,7 @@ void HD44780_BI16_SetCGRAMAddress(uint8_t cmd)
   HD44780_reg.data_type = HD44780_DATA_CGRAM;
 }
 
-// cmd : 1 << 7
+//cmd : 1 << 7
 void HD44780_BI17_SetDDRAMAddress(uint8_t cmd)
 {
   HD44780_reg.bi.ddrama.reg = cmd;
@@ -119,7 +119,7 @@ void HD44780_DrawPixel(int16_t x, int16_t y, bool isForeGround, bool isFont)
                       YSTART + FONT_PIXEL * y,
                       XSTART + FONT_PIXEL * (x + 1),
                       YSTART + FONT_PIXEL * (y + 1),
-                      isForeGround ? infoSettings.marlin_font_color : infoSettings.marlin_bg_color);
+                      isForeGround ? infoSettings.marlin_mode_font_color : infoSettings.marlin_mode_bg_color);
   }
   else
   {
@@ -127,7 +127,7 @@ void HD44780_DrawPixel(int16_t x, int16_t y, bool isForeGround, bool isFont)
                       YSTART + YOFFSET + BITMAP_PIXEL * y,
                       XSTART + BITMAP_PIXEL * (x + 1),
                       YSTART + YOFFSET + BITMAP_PIXEL * (y + 1),
-                      isForeGround ? infoSettings.marlin_font_color : infoSettings.marlin_bg_color);
+                      isForeGround ? infoSettings.marlin_mode_font_color : infoSettings.marlin_mode_bg_color);
   }
 }
 
@@ -152,7 +152,7 @@ void HD44780_DispDDRAM(uint8_t data)
     }
   }
   else
-  { // font
+  { //font
     if (data < ' ' || data > '~') return;
     ex = HD44780.x * BYTE_WIDTH + BYTE_WIDTH - 1;
     ey = HD44780.y * BYTE_HEIGHT + BYTE_HEIGHT - 1;
@@ -162,8 +162,8 @@ void HD44780_DispDDRAM(uint8_t data)
     uint16_t x = 0,
              y = 0,
              j = 0;
-    uint16_t bitMapSize = (info.pixelHeight * info.pixelWidth / 8);
-    uint8_t  font[bitMapSize];
+    uint16_t bitMapSize = (BYTE_HEIGHT * BYTE_WIDTH / 8);
+    uint8_t  font[BYTE_HEIGHT * BYTE_WIDTH / 8];
     uint32_t temp = 0;
 
     W25Qxx_ReadBuffer(font, info.bitMapAddr, bitMapSize);
@@ -176,7 +176,7 @@ void HD44780_DispDDRAM(uint8_t data)
         temp |= font[i++];
       }
 
-      for (y = HD44780.y * BYTE_HEIGHT; y < ey; y++)
+      for (y = HD44780.y * BYTE_HEIGHT; y < ey ;y++)
       {
         HD44780_DrawPixel(x, y, temp & (1 << (BYTE_HEIGHT - 1)), 1);
         temp <<= 1;

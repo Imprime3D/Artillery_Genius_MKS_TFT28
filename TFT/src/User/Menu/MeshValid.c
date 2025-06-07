@@ -1,36 +1,33 @@
 #include "MeshValid.h"
 #include "includes.h"
 
-const MENUITEMS meshValidItems = {
-  // title
-  LABEL_MESH_VALID,
-  // icon             label
-  {
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_PREHEAT,    LABEL_NULL},
-    {ICON_NULL,       LABEL_NULL},
-    {ICON_BACK,       LABEL_BACK},
-  }
-};
-
 void menuMeshValid(void)
 {
-  KEY_VALUES key_num;
-  PREHEAT_STORE preheatStore;
+  MENUITEMS meshValidItems = {
+    // title
+    LABEL_MESH_VALID,
+    // icon                          label
+    {
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_PREHEAT,                 LABEL_BACKGROUND},
+      {ICON_BABYSTEP,                LABEL_BABYSTEP},
+      {ICON_BACK,                    LABEL_BACK},
+    }
+  };
 
-  W25Qxx_ReadBuffer((uint8_t*)&preheatStore, PREHEAT_STORE_ADDR, sizeof(PREHEAT_STORE));
+  KEY_VALUES  key_num;
+
   menuDrawPage(&meshValidItems);
-
   for (int i = 0; i < PREHEAT_COUNT; i++)
   {
-    refreshPreheatIcon(&preheatStore, i, false);
+    refreshPreheatIcon(i, i, &meshValidItems.items[i]);
   }
 
-  while (MENU_IS(menuMeshValid))
+  while (infoMenu.menu[infoMenu.cur] == menuMeshValid)
   {
     key_num = menuKeyGetValue();
     switch (key_num)
@@ -48,14 +45,19 @@ void menuMeshValid(void)
       // MESHVALID NYLON
       case KEY_ICON_5:
         mustStoreCmd("G28\n");
-        mustStoreCmd("G26 H%u B%u R99\n", preheatStore.preheat_temp[key_num], preheatStore.preheat_bed[key_num]);
+        mustStoreCmd("G26 H%u B%u R99\n", infoSettings.preheat_temp[key_num], infoSettings.preheat_bed[key_num]);
         mustStoreCmd("G1 Z10 F%d\n", infoSettings.level_feedrate[FEEDRATE_Z]);
         mustStoreCmd("G1 X0 F%d\n", infoSettings.level_feedrate[FEEDRATE_XY]);
-        refreshPreheatIcon(&preheatStore, key_num, false);
+        refreshPreheatIcon(key_num, key_num, &meshValidItems.items[key_num]);
+        break;
+
+      // Menu babystep
+      case KEY_ICON_6:
+        infoMenu.menu[++infoMenu.cur] = menuBabystep;
         break;
 
       case KEY_ICON_7:
-        CLOSE_MENU();
+        infoMenu.cur--;
         break;
 
       default:
